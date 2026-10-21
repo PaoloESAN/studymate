@@ -1,0 +1,58 @@
+// prisma/schema.prisma - Esquema Relacional de Datos para StudyMate (CMMI v3.0 Nivel 2 + Scrum)
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  password  String
+  role      Role     @default(STUDENT)
+  courses   Course[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Course {
+  id        String   @id @default(uuid())
+  code      String
+  name      String
+  credits   Int
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Task {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  dueDate     DateTime
+  weight      Float      // Ponderación de la evaluación (ej: 0.30 para 30%)
+  score       Float?     // Calificación obtenida en escala vigesimal (0 a 20)
+  status      TaskStatus @default(PENDING)
+  courseId    String
+  course      Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
