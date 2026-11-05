@@ -5,6 +5,9 @@ allowBuilds:
   bcryptjs: true
   esbuild: true
   workerd: true
+  unrs-resolver: true
+  sharp: true
+  '@tailwindcss/turbopack': true
 
 onlyBuiltDependencies:
   - '@prisma/client'
@@ -13,3 +16,6 @@ onlyBuiltDependencies:
   - bcryptjs
   - esbuild
   - workerd
+  - unrs-resolver
+  - sharp
+  - '@tailwindcss/turbopack'

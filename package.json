@@ -32,5 +32,18 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "bcryptjs",
+      "esbuild",
+      "workerd",
+      "unrs-resolver",
+      "sharp",
+      "@tailwindcss/turbopack"
+    ]
+  },
   "packageManager": "pnpm@12.3.4"
 }
