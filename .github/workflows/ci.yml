@@ -139,4 +139,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verify all quality checks passed
-        run: echo "Quality Gate passed: Lint, Typecheck, Unit Tests, Security & SBOM, Build, and Smoke Test succeeded."
+        run: |
+          echo "Quality Gate passed: Lint, Typecheck, Unit Tests, Security & SBOM, Build, and Smoke Test succeeded."
+
