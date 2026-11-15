@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   CheckCircle2,
   Clock,
@@ -14,6 +14,10 @@ import {
   Trash2,
 } from 'lucide-react';
 import { getUrgencyBadge, formatLimaDate } from '@/lib/dateAlerts';
+import {
+  STUDYMATE_UI_COMMAND_EVENT,
+  StudyMateUiCommand,
+} from '@/lib/webmcp';
 import { useToast } from '@/app/providers';
 
 export interface KanbanTask {
@@ -49,10 +53,49 @@ export default function KanbanBoard({
     Record<string, 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'>
   >({});
   const [deletedIds, setDeletedIds] = useState<Record<string, boolean>>({});
-  const [selectedCourse, setSelectedCourse] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCourse, setSelectedCourse] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'ALL';
+    try {
+      const raw = sessionStorage.getItem('studymate_pending_kanban_filter');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { courseId?: string };
+        if (parsed.courseId !== undefined) return parsed.courseId;
+      }
+    } catch {
+      // Ignorar
+    }
+    return 'ALL';
+  });
+  const [searchQuery, setSearchQuery] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      const raw = sessionStorage.getItem('studymate_pending_kanban_filter');
+      if (raw) {
+        const parsed = JSON.parse(raw) as { searchQuery?: string };
+        sessionStorage.removeItem('studymate_pending_kanban_filter');
+        if (parsed.searchQuery !== undefined) return parsed.searchQuery;
+      }
+    } catch {
+      // Ignorar
+    }
+    return '';
+  });
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleUiCommand = (event: Event) => {
+      const cmd = (event as CustomEvent<StudyMateUiCommand>).detail;
+      if (cmd?.type === 'filter_kanban') {
+        if (cmd.courseId !== undefined) setSelectedCourse(cmd.courseId);
+        if (cmd.searchQuery !== undefined) setSearchQuery(cmd.searchQuery);
+        sessionStorage.removeItem('studymate_pending_kanban_filter');
+      }
+    };
+    window.addEventListener(STUDYMATE_UI_COMMAND_EVENT, handleUiCommand);
+    return () =>
+      window.removeEventListener(STUDYMATE_UI_COMMAND_EVENT, handleUiCommand);
+  }, []);
 
   const tasks = initialTasks
     .filter((t) => !deletedIds[t.id])

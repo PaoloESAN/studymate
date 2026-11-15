@@ -1,9 +1,13 @@
 'use client';
 
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
+import {
+  STUDYMATE_UI_COMMAND_EVENT,
+  StudyMateUiCommand,
+} from '@/lib/webmcp';
 import {
   LayoutDashboard,
   Kanban,
@@ -54,6 +58,18 @@ export default function Navbar() {
     () => null
   );
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const handleUiCommand = (event: Event) => {
+      const cmd = (event as CustomEvent<StudyMateUiCommand>).detail;
+      if (cmd?.type === 'set_theme') {
+        setTheme(cmd.theme);
+      }
+    };
+    window.addEventListener(STUDYMATE_UI_COMMAND_EVENT, handleUiCommand);
+    return () =>
+      window.removeEventListener(STUDYMATE_UI_COMMAND_EVENT, handleUiCommand);
+  }, [setTheme]);
 
   const handleLogout = () => {
     localStorage.removeItem('studymate_user');

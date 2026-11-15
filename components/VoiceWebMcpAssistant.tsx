@@ -35,6 +35,42 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function downsampleTo16k(
+  input: Float32Array,
+  inputRate: number
+): Int16Array {
+  if (inputRate === 16000) {
+    const pcm = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const clamped = Math.max(-1, Math.min(1, input[i]));
+      pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+    }
+    return pcm;
+  }
+
+  const ratio = inputRate / 16000;
+  const outputLength = Math.floor(input.length / ratio);
+  const pcm = new Int16Array(outputLength);
+  for (let i = 0; i < outputLength; i++) {
+    const idx = Math.floor(i * ratio);
+    const clamped = Math.max(-1, Math.min(1, input[idx]));
+    pcm[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+  }
+  return pcm;
+}
+
+const WORKLET_CODE = `
+class PcmCaptureProcessor extends AudioWorkletProcessor {
+  process(inputs) {
+    const channel = inputs[0]?.[0];
+    if (channel && channel.length > 0) {
+      this.port.postMessage(new Float32Array(channel));
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-capture-processor', PcmCaptureProcessor);
+`;
 function base64ToInt16Array(base64: string): Int16Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -58,14 +94,28 @@ function summarizeToolAction(
       return `Resumen: GPA ${String(result.semesterGPA ?? '—')} (${String(result.totalCredits ?? 0)} créditos).`;
     case 'create_course':
       return 'Asignatura registrada en el ciclo.';
+    case 'delete_course':
+      return `Asignatura "${String(result.deletedCourse ?? '')}" eliminada.`;
     case 'create_task':
       return `Evaluación agregada en ${String(result.course ?? 'el curso')}.`;
+    case 'edit_task':
+      return `Evaluación "${String(result.task ?? '')}" actualizada.`;
+    case 'delete_task':
+      return `Evaluación "${String(result.deletedTask ?? '')}" eliminada.`;
     case 'move_task_status':
       return `"${String(result.task ?? 'Tarea')}" movida a ${String(result.newStatus ?? '')}.`;
     case 'grade_task':
       return `Nota ${String(result.score ?? '')}/20 guardada en "${String(result.task ?? '')}".`;
+    case 'set_target_grade':
+      return `Simulador ajustado a nota objetivo ${String(result.targetGrade ?? '')}/20.`;
+    case 'filter_kanban':
+      return 'Filtro aplicado en el tablero Kanban.';
+    case 'set_theme':
+      return `Tema cambiado a modo ${result.theme === 'light' ? 'claro' : 'oscuro'}.`;
     case 'navigate_to':
       return `Vista abierta: ${String(result.navigatedTo ?? '')}.`;
+    case 'logout':
+      return 'Cerrando sesión...';
     default:
       return `Acción ${name} completada.`;
   }
@@ -84,11 +134,12 @@ export default function VoiceWebMcpAssistant() {
   const wsRef = useRef<WebSocket | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const captureCtxRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const workletNodeRef = useRef<AudioWorkletNode | null>(null);
   const playbackCtxRef = useRef<AudioContext | null>(null);
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
   const nextPlayTimeRef = useRef<number>(0);
   const isMutedRef = useRef<boolean>(false);
+  const setupCompleteRef = useRef<boolean>(false);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -159,9 +210,9 @@ export default function VoiceWebMcpAssistant() {
   const cleanupSession = useCallback(() => {
     stopAllPlayback();
 
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
+    if (workletNodeRef.current) {
+      workletNodeRef.current.disconnect();
+      workletNodeRef.current = null;
     }
     if (captureCtxRef.current) {
       captureCtxRef.current.close().catch(() => {});
@@ -185,6 +236,7 @@ export default function VoiceWebMcpAssistant() {
       wsRef.current = null;
     }
     setIsMuted(false);
+    setupCompleteRef.current = false;
     setSessionState('idle');
   }, [stopAllPlayback]);
 
@@ -266,79 +318,102 @@ export default function VoiceWebMcpAssistant() {
       micStreamRef.current = stream;
 
       const captureCtx = new AudioContext({ sampleRate: 16000 });
+      await captureCtx.resume();
       captureCtxRef.current = captureCtx;
       const playbackCtx = new AudioContext({ sampleRate: 24000 });
+      await playbackCtx.resume();
       playbackCtxRef.current = playbackCtx;
       nextPlayTimeRef.current = playbackCtx.currentTime;
 
       const ws = new WebSocket(tokenData.wsUrl);
       wsRef.current = ws;
 
-      ws.onopen = () => {
+      ws.onopen = async () => {
         const functionDeclarations = toolsRef.current.map((t) => ({
           name: t.name,
           description: t.description,
           parameters: t.inputSchema,
         }));
 
-        ws.send(
-          JSON.stringify({
-            setup: {
-              model: tokenData.model,
-              generationConfig: {
-                responseModalities: ['AUDIO'],
-                speechConfig: {
-                  voiceConfig: {
-                    prebuiltVoiceConfig: {
-                      voiceName: 'Aoede',
-                    },
+        const setupPayload = {
+          setup: {
+            model: tokenData.model,
+            generationConfig: {
+              responseModalities: ['AUDIO'],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: 'Aoede',
                   },
                 },
               },
-              inputAudioTranscription: {},
-              outputAudioTranscription: {},
-              systemInstruction: {
-                parts: [
-                  {
-                    text: 'Eres StudyMate, el asistente académico por voz de la Universidad ESAN. Responde siempre en español de forma breve, clara y natural. Tienes acceso directo a las herramientas WebMCP de la aplicación para listar cursos, consultar promedios en escala vigesimal (0 a 20), crear evaluaciones, mover tarjetas en el Kanban, registrar notas y navegar entre vistas. Cuando el usuario pida una acción, ejecuta la herramienta correspondiente de inmediato y confirma el resultado en pocas palabras.',
-                  },
-                ],
-              },
-              tools: [{ functionDeclarations }],
             },
-          })
-        );
-
-        const source = captureCtx.createMediaStreamSource(stream);
-        const processor = captureCtx.createScriptProcessor(2048, 1, 1);
-        processorRef.current = processor;
-
-        processor.onaudioprocess = (event) => {
-          if (isMutedRef.current || ws.readyState !== WebSocket.OPEN) return;
-          const input = event.inputBuffer.getChannelData(0);
-          const pcm16 = new Int16Array(input.length);
-          for (let i = 0; i < input.length; i++) {
-            const clamped = Math.max(-1, Math.min(1, input[i]));
-            pcm16[i] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
-          }
-
-          ws.send(
-            JSON.stringify({
-              realtimeInput: {
-                mediaChunks: [
-                  {
-                    mimeType: 'audio/pcm;rate=16000',
-                    data: arrayBufferToBase64(pcm16.buffer),
-                  },
-                ],
-              },
-            })
-          );
+            inputAudioTranscription: {},
+            outputAudioTranscription: {},
+            systemInstruction: {
+              parts: [
+                {
+                  text: 'Eres StudyMate, el asistente académico por voz de la Universidad ESAN. Responde siempre en español de forma breve, clara y natural. Tienes acceso directo a las herramientas WebMCP de toda la aplicación: listar cursos, consultar promedios en escala vigesimal (0 a 20), crear o eliminar asignaturas, crear, editar o eliminar evaluaciones, mover tarjetas en el Kanban, filtrar el tablero, registrar notas, ajustar el simulador de nota objetivo, cambiar entre modo claro y oscuro, navegar entre vistas y cerrar sesión. Cuando el usuario pida una acción, ejecuta la herramienta correspondiente de inmediato y confirma el resultado en pocas palabras.',
+                },
+              ],
+            },
+            tools: [{ functionDeclarations }],
+          },
         };
 
-        source.connect(processor);
-        processor.connect(captureCtx.destination);
-        setSessionState('listening');
+        ws.send(JSON.stringify(setupPayload));
+
+        const blob = new Blob([WORKLET_CODE], { type: 'application/javascript' });
+        const workletUrl = URL.createObjectURL(blob);
+        try {
+          await captureCtx.audioWorklet.addModule(workletUrl);
+        } finally {
+          URL.revokeObjectURL(workletUrl);
+        }
+
+        const source = captureCtx.createMediaStreamSource(stream);
+        const workletNode = new AudioWorkletNode(
+          captureCtx,
+          'pcm-capture-processor'
+        );
+        workletNodeRef.current = workletNode;
+
+        let pendingSamples: number[] = [];
+        const TARGET_CHUNK_SAMPLES = 1600;
+
+        workletNode.port.onmessage = (event: MessageEvent<Float32Array>) => {
+          if (
+            isMutedRef.current ||
+            !setupCompleteRef.current ||
+            ws.readyState !== WebSocket.OPEN
+          ) {
+            return;
+          }
+
+          const pcm16 = downsampleTo16k(event.data, captureCtx.sampleRate);
+          for (let i = 0; i < pcm16.length; i++) {
+            pendingSamples.push(pcm16[i]);
+          }
+
+          if (pendingSamples.length >= TARGET_CHUNK_SAMPLES) {
+            const chunk = new Int16Array(pendingSamples);
+            pendingSamples = [];
+
+            ws.send(
+              JSON.stringify({
+                realtimeInput: {
+                  audio: {
+                    mimeType: 'audio/pcm;rate=16000',
+                    data: arrayBufferToBase64(chunk.buffer),
+                  },
+                },
+              })
+            );
+          }
+        };
+
+        source.connect(workletNode);
+        workletNode.connect(captureCtx.destination);
       };
 
       ws.onmessage = async (event) => {
@@ -348,6 +423,8 @@ export default function VoiceWebMcpAssistant() {
               ? event.data
               : await (event.data as Blob).text();
           const msg = JSON.parse(rawText) as {
+            setupComplete?: Record<string, unknown>;
+            error?: { message?: string; code?: number };
             serverContent?: {
               interrupted?: boolean;
               inputTranscription?: { text?: string };
@@ -366,6 +443,16 @@ export default function VoiceWebMcpAssistant() {
               }>;
             };
           };
+
+          if (msg.setupComplete) {
+            setupCompleteRef.current = true;
+            setSessionState('listening');
+            addActionEntry('Conectado. Ya puedes hablar.');
+          } else if (msg.error) {
+            addActionEntry(
+              `Error servidor: ${msg.error.message || 'desconocido'}`
+            );
+          }
 
           if (msg.serverContent?.interrupted) {
             stopAllPlayback();
@@ -459,12 +546,12 @@ export default function VoiceWebMcpAssistant() {
       <button
         type="button"
         onClick={startVoiceSession}
-        aria-label="Activar asistente de voz WebMCP"
-        title="Controlar StudyMate por voz (WebMCP + Gemini 3.8 Live)"
+        aria-label="Activar asistente de voz"
+        title="Controlar StudyMate por voz"
         className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#C8102E] hover:bg-[#A60D25] text-white text-xs font-semibold shadow-lg transition-all cursor-pointer"
       >
         <Mic className="w-4 h-4" />
-        <span>Voz WebMCP</span>
+        <span>Voz</span>
       </button>
     );
   }
@@ -568,7 +655,7 @@ export default function VoiceWebMcpAssistant() {
 
           {/* Pie de sugerencia */}
           <div className="px-3.5 py-2 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/30 text-[11px] text-zinc-400 dark:text-zinc-500">
-            Prueba: &ldquo;ponle 18 al parcial&rdquo; o &ldquo;abre el tablero&rdquo;
+            Prueba: &ldquo;simula llegar a 18&rdquo;, &ldquo;ponle 17 al parcial&rdquo; o &ldquo;modo claro&rdquo;
           </div>
         </section>
       )}

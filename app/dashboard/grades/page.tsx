@@ -4,7 +4,11 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
 import AuthGuard from '@/components/AuthGuard';
 import ScoreModal from '@/components/ScoreModal';
-import { STUDYMATE_DATA_UPDATED_EVENT } from '@/lib/webmcp';
+import {
+  STUDYMATE_DATA_UPDATED_EVENT,
+  STUDYMATE_UI_COMMAND_EVENT,
+  StudyMateUiCommand,
+} from '@/lib/webmcp';
 import { Award, SlidersHorizontal, CheckCircle2 } from 'lucide-react';
 
 interface GradeTask {
@@ -31,7 +35,16 @@ interface GradeCourse {
 export default function GradesPage() {
   const [courses, setCourses] = useState<GradeCourse[]>([]);
   const [loading, setLoading] = useState(true);
-  const [targetGrade, setTargetGrade] = useState<number>(14.0);
+  const [targetGrade, setTargetGrade] = useState<number>(() => {
+    if (typeof window === 'undefined') return 14.0;
+    const pending = sessionStorage.getItem('studymate_pending_target_grade');
+    if (pending) {
+      sessionStorage.removeItem('studymate_pending_target_grade');
+      const parsed = parseFloat(pending);
+      if (!isNaN(parsed)) return parsed;
+    }
+    return 14.0;
+  });
   const [activeTaskForScore, setActiveTaskForScore] =
     useState<GradeTask | null>(null);
   const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
@@ -60,9 +73,20 @@ export default function GradesPage() {
     const handleRefresh = () => {
       loadCourses();
     };
+    const handleUiCommand = (event: Event) => {
+      const cmd = (event as CustomEvent<StudyMateUiCommand>).detail;
+      if (cmd?.type === 'set_target_grade') {
+        setTargetGrade(cmd.targetGrade);
+        sessionStorage.removeItem('studymate_pending_target_grade');
+      }
+    };
+
     window.addEventListener(STUDYMATE_DATA_UPDATED_EVENT, handleRefresh);
-    return () =>
+    window.addEventListener(STUDYMATE_UI_COMMAND_EVENT, handleUiCommand);
+    return () => {
       window.removeEventListener(STUDYMATE_DATA_UPDATED_EVENT, handleRefresh);
+      window.removeEventListener(STUDYMATE_UI_COMMAND_EVENT, handleUiCommand);
+    };
   }, [loadCourses]);
 
   return (

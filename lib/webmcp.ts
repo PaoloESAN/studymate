@@ -21,6 +21,11 @@ export interface StudyMateToolDefinition {
   execute: (args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }
 
+export type StudyMateUiCommand =
+  | { type: 'set_target_grade'; targetGrade: number }
+  | { type: 'filter_kanban'; courseId?: string; searchQuery?: string }
+  | { type: 'set_theme'; theme: 'light' | 'dark' };
+
 interface ApiTask {
   id: string;
   title: string;
@@ -55,10 +60,19 @@ interface BrowserModelContext {
 }
 
 export const STUDYMATE_DATA_UPDATED_EVENT = 'studymate:data-updated';
+export const STUDYMATE_UI_COMMAND_EVENT = 'studymate:ui-command';
 
 function notifyDataUpdated() {
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(STUDYMATE_DATA_UPDATED_EVENT));
+  }
+}
+
+function dispatchUiCommand(command: StudyMateUiCommand) {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(STUDYMATE_UI_COMMAND_EVENT, { detail: command })
+    );
   }
 }
 
@@ -204,6 +218,36 @@ export function createStudyMateTools(
       },
     },
     {
+      name: 'delete_course',
+      description:
+        'Elimina una asignatura matriculada y todas sus evaluaciones.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          courseQuery: {
+            type: 'string',
+            description: 'Código o nombre de la asignatura a eliminar',
+          },
+        },
+        required: ['courseQuery'],
+      },
+      execute: async (args) => {
+        const courses = await fetchCoursesList();
+        const course = findCourse(courses, String(args.courseQuery || ''));
+        if (!course) {
+          return { ok: false, error: 'No se encontró esa asignatura.' };
+        }
+        const res = await fetch(
+          `/api/courses?id=${encodeURIComponent(course.id)}`,
+          { method: 'DELETE' }
+        );
+        const data = (await res.json()) as Record<string, unknown>;
+        if (!res.ok) return { ok: false, error: data.error };
+        notifyDataUpdated();
+        return { ok: true, deletedCourse: course.name };
+      },
+    },
+    {
       name: 'create_task',
       description:
         'Crea una nueva evaluación o tarea dentro de una asignatura existente.',
@@ -261,6 +305,89 @@ export function createStudyMateTools(
         if (!res.ok) return { ok: false, error: data.error };
         notifyDataUpdated();
         return { ok: true, course: course.name, task: data };
+      },
+    },
+    {
+      name: 'edit_task',
+      description:
+        'Edita el título, fecha de entrega o descripción de una evaluación existente.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          taskQuery: {
+            type: 'string',
+            description: 'Nombre o ID de la evaluación a editar',
+          },
+          title: {
+            type: 'string',
+            description: 'Nuevo título opcional',
+          },
+          dueDate: {
+            type: 'string',
+            description: 'Nueva fecha ISO opcional',
+          },
+          description: {
+            type: 'string',
+            description: 'Nueva descripción opcional',
+          },
+        },
+        required: ['taskQuery'],
+      },
+      execute: async (args) => {
+        const courses = await fetchCoursesList();
+        const match = findTask(courses, String(args.taskQuery || ''));
+        if (!match) {
+          return { ok: false, error: 'No se encontró esa evaluación.' };
+        }
+        const payload: Record<string, unknown> = {};
+        if (args.title) payload.title = String(args.title).trim();
+        if (args.dueDate) payload.dueDate = String(args.dueDate);
+        if (args.description !== undefined) {
+          payload.description = String(args.description);
+        }
+
+        const res = await fetch(`/api/tasks/${match.task.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = (await res.json()) as Record<string, unknown>;
+        if (!res.ok) return { ok: false, error: data.error };
+        notifyDataUpdated();
+        return { ok: true, task: match.task.title, updated: payload };
+      },
+    },
+    {
+      name: 'delete_task',
+      description: 'Elimina una evaluación o tarea de una asignatura.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          taskQuery: {
+            type: 'string',
+            description: 'Nombre o ID de la evaluación a eliminar',
+          },
+        },
+        required: ['taskQuery'],
+      },
+      execute: async (args) => {
+        const courses = await fetchCoursesList();
+        const match = findTask(courses, String(args.taskQuery || ''));
+        if (!match) {
+          return { ok: false, error: 'No se encontró esa evaluación.' };
+        }
+        const res = await fetch(`/api/tasks/${match.task.id}`, {
+          method: 'DELETE',
+        });
+        if (!res.ok) {
+          return { ok: false, error: 'No se pudo eliminar la evaluación.' };
+        }
+        notifyDataUpdated();
+        return {
+          ok: true,
+          deletedTask: match.task.title,
+          course: match.course.name,
+        };
       },
     },
     {
@@ -347,6 +474,131 @@ export function createStudyMateTools(
       },
     },
     {
+      name: 'set_target_grade',
+      description:
+        'Ajusta el simulador de nota final objetivo (entre 10.5 y 19.5) en la vista de Notas y calcula cuánto necesita sacar el estudiante en lo que falta de cada curso.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          targetGrade: {
+            type: 'number',
+            description: 'Nota final objetivo deseada entre 10.5 y 19.5',
+          },
+        },
+        required: ['targetGrade'],
+      },
+      execute: async (args) => {
+        const raw = Number(args.targetGrade ?? 14.0);
+        const clamped = Math.min(
+          19.5,
+          Math.max(10.5, Math.round(raw * 2) / 2)
+        );
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(
+            'studymate_pending_target_grade',
+            String(clamped)
+          );
+          if (window.location.pathname !== '/dashboard/grades') {
+            navigate('/dashboard/grades');
+          }
+          dispatchUiCommand({ type: 'set_target_grade', targetGrade: clamped });
+        }
+
+        const courses = await fetchCoursesList();
+        const projections = courses.map((c) => {
+          const remaining = Math.max(
+            0,
+            (100 - c.metrics.evaluatedPercentage) / 100
+          );
+          const needed =
+            remaining > 0
+              ? Number(
+                  ((clamped - c.metrics.accumulatedPoints) / remaining).toFixed(
+                    1
+                  )
+                )
+              : null;
+          return {
+            code: c.code,
+            name: c.name,
+            neededOnRemaining: needed,
+          };
+        });
+
+        return { ok: true, targetGrade: clamped, projections };
+      },
+    },
+    {
+      name: 'filter_kanban',
+      description:
+        'Filtra el tablero Kanban por texto de búsqueda y/o por asignatura.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          courseQuery: {
+            type: 'string',
+            description:
+              'Código o nombre de la asignatura, o "ALL" para mostrar todas',
+          },
+          searchQuery: {
+            type: 'string',
+            description: 'Texto para buscar evaluaciones en el tablero',
+          },
+        },
+      },
+      execute: async (args) => {
+        let courseId: string | undefined;
+        if (args.courseQuery) {
+          const q = String(args.courseQuery).trim();
+          if (q.toUpperCase() === 'ALL' || q.toLowerCase() === 'todas') {
+            courseId = 'ALL';
+          } else {
+            const courses = await fetchCoursesList();
+            const found = findCourse(courses, q);
+            courseId = found ? found.id : 'ALL';
+          }
+        }
+        const searchQuery =
+          args.searchQuery !== undefined ? String(args.searchQuery) : undefined;
+
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem(
+            'studymate_pending_kanban_filter',
+            JSON.stringify({ courseId, searchQuery })
+          );
+          if (window.location.pathname !== '/dashboard/kanban') {
+            navigate('/dashboard/kanban');
+          }
+          dispatchUiCommand({
+            type: 'filter_kanban',
+            courseId,
+            searchQuery,
+          });
+        }
+        return { ok: true, courseId, searchQuery };
+      },
+    },
+    {
+      name: 'set_theme',
+      description: 'Cambia el tema visual de StudyMate entre modo claro y oscuro.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          theme: {
+            type: 'string',
+            description: 'Tema deseado',
+            enum: ['light', 'dark'],
+          },
+        },
+        required: ['theme'],
+      },
+      execute: async (args) => {
+        const theme = args.theme === 'light' ? 'light' : 'dark';
+        dispatchUiCommand({ type: 'set_theme', theme });
+        return { ok: true, theme };
+      },
+    },
+    {
       name: 'navigate_to',
       description:
         'Navega a una sección de StudyMate: resumen (/dashboard), tablero Kanban (/dashboard/kanban), notas (/dashboard/grades) o analítica (/dashboard/analytics).',
@@ -371,6 +623,21 @@ export function createStudyMateTools(
         const route = String(args.route || '/dashboard');
         navigate(route);
         return { ok: true, navigatedTo: route };
+      },
+    },
+    {
+      name: 'logout',
+      description: 'Cierra la sesión del usuario actual y regresa al inicio de sesión.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+      execute: async () => {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('studymate_user');
+          navigate('/login');
+        }
+        return { ok: true };
       },
     },
   ];
