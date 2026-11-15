@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import Navbar from '@/components/Navbar';
 import AuthGuard from '@/components/AuthGuard';
 import ScoreModal from '@/components/ScoreModal';
+import { STUDYMATE_DATA_UPDATED_EVENT } from '@/lib/webmcp';
 import { Award, SlidersHorizontal, CheckCircle2 } from 'lucide-react';
 
 interface GradeTask {
@@ -55,7 +56,14 @@ export default function GradesPage() {
       .then((data) => setCourses(data))
       .catch((err) => console.error('Error cargando calificaciones:', err))
       .finally(() => setLoading(false));
-  }, []);
+
+    const handleRefresh = () => {
+      loadCourses();
+    };
+    window.addEventListener(STUDYMATE_DATA_UPDATED_EVENT, handleRefresh);
+    return () =>
+      window.removeEventListener(STUDYMATE_DATA_UPDATED_EVENT, handleRefresh);
+  }, [loadCourses]);
 
   return (
     <AuthGuard>

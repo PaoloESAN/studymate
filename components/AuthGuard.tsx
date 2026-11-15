@@ -2,6 +2,7 @@
 
 import React, { useEffect, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
+import VoiceWebMcpAssistant from '@/components/VoiceWebMcpAssistant';
 
 const emptySubscribe = () => () => {};
 
@@ -62,5 +63,10 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      <VoiceWebMcpAssistant />
+    </>
+  );
 }

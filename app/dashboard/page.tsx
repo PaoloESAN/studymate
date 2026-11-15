@@ -7,6 +7,7 @@ import CourseCard from '@/components/CourseCard';
 import TaskModal from '@/components/TaskModal';
 import ScoreModal from '@/components/ScoreModal';
 import { calculateSemesterGPA } from '@/lib/gradeCalculator';
+import { STUDYMATE_DATA_UPDATED_EVENT } from '@/lib/webmcp';
 import { useToast } from '@/app/providers';
 import {
   Plus,
@@ -84,7 +85,14 @@ export default function DashboardPage() {
       .then((data) => setCourses(data))
       .catch((err) => console.error('Error cargando cursos:', err))
       .finally(() => setLoading(false));
-  }, []);
+
+    const handleRefresh = () => {
+      fetchCourses();
+    };
+    window.addEventListener(STUDYMATE_DATA_UPDATED_EVENT, handleRefresh);
+    return () =>
+      window.removeEventListener(STUDYMATE_DATA_UPDATED_EVENT, handleRefresh);
+  }, [fetchCourses]);
 
   useEffect(() => {
     if (!isCourseModalOpen) return;

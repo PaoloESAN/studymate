@@ -5,6 +5,7 @@ import Navbar from '@/components/Navbar';
 import AuthGuard from '@/components/AuthGuard';
 import KanbanBoard, { KanbanTask } from '@/components/KanbanBoard';
 import ScoreModal from '@/components/ScoreModal';
+import { STUDYMATE_DATA_UPDATED_EVENT } from '@/lib/webmcp';
 
 interface RawCourse {
   id: string;
@@ -72,7 +73,14 @@ export default function KanbanPage() {
       })
       .catch((err) => console.error('Error cargando Kanban:', err))
       .finally(() => setLoading(false));
-  }, []);
+
+    const handleRefresh = () => {
+      fetchBoardData();
+    };
+    window.addEventListener(STUDYMATE_DATA_UPDATED_EVENT, handleRefresh);
+    return () =>
+      window.removeEventListener(STUDYMATE_DATA_UPDATED_EVENT, handleRefresh);
+  }, [fetchBoardData]);
 
   return (
     <AuthGuard>
