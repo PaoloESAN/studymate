@@ -7,6 +7,7 @@ import CourseCard from '@/components/CourseCard';
 import TaskModal from '@/components/TaskModal';
 import ScoreModal from '@/components/ScoreModal';
 import { calculateSemesterGPA } from '@/lib/gradeCalculator';
+import { prioritizeStudyTasks } from '@/lib/studyPrioritizer';
 import { STUDYMATE_DATA_UPDATED_EVENT } from '@/lib/webmcp';
 import { useToast } from '@/app/providers';
 import {
@@ -17,6 +18,8 @@ import {
   Award,
   X,
   AlertCircle,
+  BrainCircuit,
+  Clock,
 } from 'lucide-react';
 
 interface Task {
@@ -47,6 +50,7 @@ export default function DashboardPage() {
   const { showToast } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState<Date | null>(null);
 
   // Modales
   const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
@@ -70,6 +74,7 @@ export default function DashboardPage() {
       if (res.ok) {
         const data = await res.json();
         setCourses(data);
+        setNow(new Date());
       }
     } catch (err) {
       console.error('Error cargando cursos:', err);
@@ -81,7 +86,10 @@ export default function DashboardPage() {
   useEffect(() => {
     fetch('/api/courses?userId=default-user')
       .then((res) => (res.ok ? res.json() : []))
-      .then((data) => setCourses(data))
+      .then((data) => {
+        setCourses(data);
+        setNow(new Date());
+      })
       .catch((err) => console.error('Error cargando cursos:', err))
       .finally(() => setLoading(false));
 
@@ -183,6 +191,9 @@ export default function DashboardPage() {
     allTasks.length > 0
       ? Math.round((completedTasks.length / allTasks.length) * 100)
       : 0;
+  const studyPriorities = now
+    ? prioritizeStudyTasks(courses, now).slice(0, 3)
+    : [];
 
   return (
     <AuthGuard>
@@ -278,6 +289,70 @@ export default function DashboardPage() {
                 </p>
               </div>
             </div>
+          )}
+
+          {/* Priorizador Inteligente de Estudio (Modelo ML) */}
+          {!loading && studyPriorities.length > 0 && (
+            <section className="bg-white dark:bg-[#111114] border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-[#C8102E] dark:text-rose-400 flex items-center justify-center">
+                    <BrainCircuit className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50">
+                      Qué estudiar hoy
+                    </h2>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      Ranking por urgencia, peso en la nota y riesgo del curso
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+                {studyPriorities.map((item, idx) => (
+                  <div
+                    key={item.taskId}
+                    className="p-4 rounded-xl border border-zinc-200/80 dark:border-zinc-800 bg-zinc-50/60 dark:bg-zinc-900/50 flex flex-col justify-between gap-3"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] font-bold text-zinc-400">
+                          #{idx + 1}
+                        </span>
+                        <span
+                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                            item.priorityLevel === 'Crítica'
+                              ? 'bg-rose-100 text-[#C8102E] dark:bg-rose-950/60 dark:text-rose-300'
+                              : item.priorityLevel === 'Alta'
+                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                                : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+                          }`}
+                        >
+                          {item.priorityLevel} · {item.priorityScore}/100
+                        </span>
+                      </div>
+
+                      <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 line-clamp-1">
+                        {item.taskTitle}
+                      </h3>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                        {item.courseName}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-zinc-200/70 dark:border-zinc-800 text-[11px] text-zinc-500 dark:text-zinc-400">
+                      <span className="truncate">{item.reasons.join(' · ')}</span>
+                      <span className="inline-flex items-center gap-1 font-mono font-medium shrink-0 text-zinc-700 dark:text-zinc-300">
+                        <Clock className="w-3 h-3" />
+                        {item.recommendedMinutes}m
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
 
           {/* Grid de Asignaturas */}

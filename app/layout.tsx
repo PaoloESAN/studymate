@@ -24,7 +24,11 @@ export const metadata: Metadata = {
     "Plataforma universitaria para la gestión de asignaturas, ponderaciones, entregas en Kanban y proyección de promedio ponderado.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html
       lang="es"

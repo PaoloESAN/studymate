@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { calculateCourseMetrics, validateTaskWeight, calculateSemesterGPA } from '../lib/gradeCalculator.ts';
 import { getUrgencyBadge } from '../lib/dateAlerts.ts';
+import { prioritizeStudyTasks } from '../lib/studyPrioritizer.ts';
 
 describe('Aseguramiento de Calidad de Software (PQA) - Suite de Pruebas StudyMate', () => {
 
@@ -104,6 +105,38 @@ describe('Aseguramiento de Calidad de Software (PQA) - Suite de Pruebas StudyMat
     const gpa = calculateSemesterGPA(courses);
     assert.equal(gpa.totalCredits, 11, 'Total de créditos debe ser 11');
     assert.equal(gpa.semesterGPA, 16.00, 'El GPA ponderado debe ser 16.00');
+  });
+
+  // Caso ML-01: Priorizador inteligente ordena tareas por urgencia, peso y riesgo académico
+  it('ML-01: prioritizeStudyTasks prioriza tarea urgente de alto peso en curso en riesgo y excluye completadas', () => {
+    const now = new Date('2026-11-15T12:00:00Z');
+    const courses = [
+      {
+        id: 'c1',
+        name: 'Calidad de Software',
+        credits: 4,
+        metrics: { currentAverage: 10.2, evaluatedPercentage: 40, minScoreToPass: 13.5 },
+        tasks: [
+          { id: 't-urgent', title: 'Examen Parcial', dueDate: '2026-11-16T12:00:00Z', weight: 0.35, status: 'PENDING', score: null },
+          { id: 't-done', title: 'Control 1', dueDate: '2026-11-10T12:00:00Z', weight: 0.20, status: 'COMPLETED', score: 15 },
+        ],
+      },
+      {
+        id: 'c2',
+        name: 'Ética Profesional',
+        credits: 2,
+        metrics: { currentAverage: 18.0, evaluatedPercentage: 50, minScoreToPass: 3.0 },
+        tasks: [
+          { id: 't-easy', title: 'Ensayo Breve', dueDate: '2026-11-28T12:00:00Z', weight: 0.10, status: 'PENDING', score: null },
+        ],
+      },
+    ];
+
+    const ranking = prioritizeStudyTasks(courses, now);
+    assert.equal(ranking.length, 2, 'Debe excluir tareas ya completadas');
+    assert.equal(ranking[0].taskId, 't-urgent', 'La tarea urgente de alto peso y curso en riesgo debe ir primero');
+    assert.ok(ranking[0].priorityScore > ranking[1].priorityScore, 'El score de prioridad debe ser estrictamente mayor');
+    assert.equal(ranking[0].priorityLevel, 'Crítica');
   });
 
 });

@@ -1,4 +1,5 @@
 import { calculateSemesterGPA } from '@/lib/gradeCalculator';
+import { prioritizeStudyTasks } from '@/lib/studyPrioritizer';
 
 export interface WebMcpToolSchema {
   type: 'object';
@@ -177,6 +178,21 @@ export function createStudyMateTools(
           completedTasks: completed,
           totalTasks: allTasks.length,
         };
+      },
+    },
+    {
+      name: 'get_study_priorities',
+      description:
+        'Calcula el ranking inteligente (ML) de qué evaluaciones pendientes estudiar primero según urgencia, peso y riesgo académico.',
+      readOnlyHint: true,
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+      execute: async () => {
+        const courses = await fetchCoursesList();
+        const ranking = prioritizeStudyTasks(courses).slice(0, 5);
+        return { totalPending: ranking.length, recommendations: ranking };
       },
     },
     {
