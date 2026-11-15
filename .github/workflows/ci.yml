@@ -99,6 +99,7 @@ jobs:
         with:
           name: next-build
           path: .next
+          include-hidden-files: true
 
   integration-smoke-test:
     name: Integration smoke test
