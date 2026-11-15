@@ -51,7 +51,7 @@ interface BrowserModelContext {
     inputSchema: WebMcpToolSchema;
     annotations?: { readOnlyHint?: boolean };
     execute: (args: Record<string, unknown>) => Promise<unknown>;
-  }) => void;
+  }) => unknown;
 }
 
 export const STUDYMATE_DATA_UPDATED_EVENT = 'studymate:data-updated';
@@ -378,22 +378,30 @@ export function createStudyMateTools(
 
 export function registerNativeWebMcpTools(tools: StudyMateToolDefinition[]) {
   if (typeof window === 'undefined') return;
+  const win = window as Window & { __studymateWebMcpRegistered?: boolean };
+  if (win.__studymateWebMcpRegistered) return;
+
   const nav = navigator as Navigator & { modelContext?: BrowserModelContext };
   const doc = document as Document & { modelContext?: BrowserModelContext };
   const context = nav.modelContext || doc.modelContext;
   if (!context?.registerTool) return;
 
+  win.__studymateWebMcpRegistered = true;
+
   for (const tool of tools) {
     try {
-      context.registerTool({
+      const result = context.registerTool({
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema,
         annotations: { readOnlyHint: Boolean(tool.readOnlyHint) },
         execute: tool.execute,
       });
+      Promise.resolve(result).catch(() => {
+        // Ignorar si ya fue registrada en la misma pestaña
+      });
     } catch {
-      // Ignorar si ya fue registrada en la misma pestaña
+      // Ignorar errores síncronos de registro duplicado
     }
   }
 }
