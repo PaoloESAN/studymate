@@ -212,7 +212,7 @@ export default function Navbar() {
           </nav>
 
           <div className="flex items-center gap-2">
-            {/* Botón Configuración (izquierda del botón de tema) */}
+            {/* Botón Configuración */}
             <button
               type="button"
               onClick={() => {
@@ -228,27 +228,6 @@ export default function Navbar() {
               }`}
             >
               <Settings className="w-4 h-4" />
-            </button>
-
-            {/* Botón Tema Claro/Oscuro */}
-            <button
-              type="button"
-              onClick={() => setTheme(isDark ? 'light' : 'dark')}
-              aria-label={
-                isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'
-              }
-              title={isDark ? 'Modo claro' : 'Modo oscuro'}
-              className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
-            >
-              {mounted ? (
-                isDark ? (
-                  <Sun className="w-4 h-4 text-amber-400" />
-                ) : (
-                  <Moon className="w-4 h-4 text-zinc-700" />
-                )
-              ) : (
-                <Sun className="w-4 h-4 opacity-0" />
-              )}
             </button>
 
             <div className="hidden lg:flex flex-col items-end pl-2 pr-1">
