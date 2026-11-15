@@ -1,18 +1,20 @@
-// components/KanbanBoard.tsx - Tablero Kanban Interactivo de 3 Columnas (HU04 / HU07)
-// Mitiga BUG-04 (implementación de Optimistic UI Update para eliminar latencia visual)
 'use client';
 
 import React, { useState } from 'react';
-import { 
-  CheckCircle2, 
-  Clock, 
-  ArrowRight, 
-  ArrowLeft, 
-  Filter, 
+import {
+  CheckCircle2,
+  Clock,
+  ArrowRight,
+  ArrowLeft,
+  Filter,
   Award,
-  AlertCircle 
+  AlertCircle,
+  Search,
+  GripVertical,
+  Trash2,
 } from 'lucide-react';
 import { getUrgencyBadge, formatLimaDate } from '@/lib/dateAlerts';
+import { useToast } from '@/app/providers';
 
 export interface KanbanTask {
   id: string;
@@ -33,64 +35,84 @@ interface KanbanBoardProps {
   initialTasks: KanbanTask[];
   courses: Array<{ id: string; code: string; name: string }>;
   onOpenGradeModal: (task: KanbanTask) => void;
+  onTasksChanged?: () => void;
 }
 
 export default function KanbanBoard({
   initialTasks,
   courses,
   onOpenGradeModal,
+  onTasksChanged,
 }: KanbanBoardProps) {
-  const [tasks, setTasks] = useState<KanbanTask[]>(initialTasks);
+  const { showToast } = useToast();
+  const [statusOverrides, setStatusOverrides] = useState<
+    Record<string, 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'>
+  >({});
+  const [deletedIds, setDeletedIds] = useState<Record<string, boolean>>({});
   const [selectedCourse, setSelectedCourse] = useState<string>('ALL');
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
 
-  // CA-07.2: Filtrado reactivo por curso sin recargar la página
-  const filteredTasks = selectedCourse === 'ALL'
-    ? tasks
-    : tasks.filter((t) => t.course.id === selectedCourse);
+  const tasks = initialTasks
+    .filter((t) => !deletedIds[t.id])
+    .map((t) =>
+      statusOverrides[t.id] ? { ...t, status: statusOverrides[t.id] } : t
+    );
+
+  const filteredTasks = tasks.filter((t) => {
+    const matchesCourse =
+      selectedCourse === 'ALL' || t.course.id === selectedCourse;
+    const query = searchQuery.trim().toLowerCase();
+    const matchesQuery =
+      !query ||
+      t.title.toLowerCase().includes(query) ||
+      t.course.code.toLowerCase().includes(query) ||
+      t.course.name.toLowerCase().includes(query);
+    return matchesCourse && matchesQuery;
+  });
 
   const columns: Array<{
     id: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
     title: string;
     description: string;
-    color: string;
-    badgeColor: string;
+    accent: string;
+    badge: string;
   }> = [
     {
       id: 'PENDING',
-      title: 'Por Hacer',
-      description: 'Actividades programadas',
-      color: 'border-zinc-300 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-900/40',
-      badgeColor: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-300',
+      title: 'Por hacer',
+      description: 'Evaluaciones programadas',
+      accent: 'border-t-zinc-400 dark:border-t-zinc-600',
+      badge: 'bg-zinc-200/80 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
     },
     {
       id: 'IN_PROGRESS',
-      title: 'En Curso',
+      title: 'En curso',
       description: 'En desarrollo activo',
-      color: 'border-blue-200 dark:border-blue-900/50 bg-blue-50/30 dark:bg-blue-950/20',
-      badgeColor: 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300',
+      accent: 'border-t-amber-500',
+      badge: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300',
     },
     {
       id: 'COMPLETED',
       title: 'Completado',
-      description: 'Listas para calificar o evaluadas',
-      color: 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-950/20',
-      badgeColor: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300',
+      description: 'Entregadas o calificadas',
+      accent: 'border-t-emerald-500',
+      badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300',
     },
   ];
 
-  // Mitigación BUG-04 / CA-04.2: Actualización Optimista de Estado en React (< 10ms visual)
-  const moveTaskStatus = async (taskId: string, newStatus: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
-    const previousTasks = [...tasks];
+  const moveTaskStatus = async (
+    taskId: string,
+    newStatus: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED'
+  ) => {
+    const target = tasks.find((t) => t.id === taskId);
+    if (!target || target.status === newStatus) return;
 
-    // 1. Actualización inmediata en UI
-    setTasks((current) =>
-      current.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t))
-    );
+    const prevOverride = statusOverrides[taskId];
+    setStatusOverrides((prev) => ({ ...prev, [taskId]: newStatus }));
 
-    // 2. Persistencia en base de datos PostgreSQL
     try {
-      setIsUpdating(true);
       const res = await fetch(`/api/tasks/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -98,190 +120,299 @@ export default function KanbanBoard({
       });
 
       if (!res.ok) {
-        // Reversión automática en caso de fallo
-        setTasks(previousTasks);
-        alert('No se pudo actualizar el estado en el servidor. Revirtiendo.');
+        setStatusOverrides((prev) => {
+          const next = { ...prev };
+          if (prevOverride) next[taskId] = prevOverride;
+          else delete next[taskId];
+          return next;
+        });
+        showToast('No se pudo actualizar el estado de la tarea', 'error');
+      } else {
+        const label =
+          newStatus === 'PENDING'
+            ? 'Por hacer'
+            : newStatus === 'IN_PROGRESS'
+              ? 'En curso'
+              : 'Completado';
+        showToast(`"${target.title}" movida a ${label}`);
       }
-    } catch (err) {
-      setTasks(previousTasks);
-      alert('Error de red al actualizar la tarea.');
-    } finally {
-      setIsUpdating(false);
+    } catch {
+      setStatusOverrides((prev) => {
+        const next = { ...prev };
+        if (prevOverride) next[taskId] = prevOverride;
+        else delete next[taskId];
+        return next;
+      });
+      showToast('Error de conexión al mover la tarea', 'error');
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string, taskTitle: string) => {
+    setDeletedIds((prev) => ({ ...prev, [taskId]: true }));
+
+    try {
+      const res = await fetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        setDeletedIds((prev) => {
+          const next = { ...prev };
+          delete next[taskId];
+          return next;
+        });
+        showToast('No se pudo eliminar la evaluación', 'error');
+        return;
+      }
+      showToast(`Evaluación "${taskTitle}" eliminada`);
+      onTasksChanged?.();
+    } catch {
+      setDeletedIds((prev) => {
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
+      showToast('Error de conexión al eliminar', 'error');
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Barra de Filtro por Curso (HU07 / CA-07.2) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-xs">
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-zinc-500" />
-          <span className="text-xs font-bold uppercase tracking-wider text-zinc-600 dark:text-zinc-400">
-            Filtrar por Asignatura:
-          </span>
+      {/* Barra de búsqueda y filtro por asignatura */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white dark:bg-[#111114] p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar evaluación o código de curso..."
+            aria-label="Buscar evaluaciones"
+            className="w-full pl-9 pr-3.5 py-2 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#C8102E]/30 focus:border-[#C8102E]"
+          />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 mr-1">
+            <Filter className="w-3.5 h-3.5" />
+            Curso:
+          </span>
           <button
+            type="button"
             onClick={() => setSelectedCourse('ALL')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
               selectedCourse === 'ALL'
-                ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shadow-xs'
-                : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200'
+                ? 'bg-[#C8102E] text-white'
+                : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800'
             }`}
           >
             Todas ({tasks.length})
           </button>
+
           {courses.map((course) => {
             const count = tasks.filter((t) => t.course.id === course.id).length;
+            const active = selectedCourse === course.id;
             return (
               <button
                 key={course.id}
+                type="button"
                 onClick={() => setSelectedCourse(course.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                  selectedCourse === course.id
-                    ? 'bg-red-600 text-white shadow-xs'
-                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200'
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-[#C8102E] text-white'
+                    : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800'
                 }`}
               >
-                {course.code} ({count})
+                <span className="font-mono">{course.code}</span> ({count})
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* Las 3 Columnas del Tablero Kanban (HU04 / CA-04.1) */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+      {/* Tablero 3 Columnas */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {columns.map((col) => {
-          const colTasks = filteredTasks.filter((t) => t.status === col.id);
+          const columnTasks = filteredTasks.filter((t) => t.status === col.id);
+          const isDropTarget = dragOverColumn === col.id;
 
           return (
-            <div
+            <section
               key={col.id}
-              className={`rounded-2xl border ${col.color} p-4 flex flex-col min-h-[500px] shadow-xs`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (dragOverColumn !== col.id) setDragOverColumn(col.id);
+              }}
+              onDragLeave={() => {
+                if (dragOverColumn === col.id) setDragOverColumn(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                const droppedId =
+                  e.dataTransfer.getData('text/plain') || draggedTaskId;
+                setDragOverColumn(null);
+                setDraggedTaskId(null);
+                if (droppedId) {
+                  moveTaskStatus(droppedId, col.id);
+                }
+              }}
+              className={`rounded-2xl border border-zinc-200 dark:border-zinc-800 border-t-4 ${
+                col.accent
+              } bg-zinc-50/70 dark:bg-zinc-900/40 p-4 flex flex-col min-h-[460px] transition-all ${
+                isDropTarget
+                  ? 'ring-2 ring-[#C8102E] bg-rose-50/30 dark:bg-rose-950/10'
+                  : ''
+              }`}
             >
-              {/* Cabecera de Columna */}
-              <div className="flex items-center justify-between pb-3 mb-3 border-b border-zinc-200/60 dark:border-zinc-800/60">
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-zinc-200/80 dark:border-zinc-800">
                 <div>
-                  <h3 className="font-extrabold text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                  <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-50">
                     {col.title}
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${col.badgeColor}`}>
-                      {colTasks.length}
-                    </span>
                   </h3>
-                  <p className="text-[11px] text-zinc-500 mt-0.5">{col.description}</p>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    {col.description}
+                  </p>
                 </div>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-xs font-mono font-bold tabular-nums ${col.badge}`}
+                >
+                  {columnTasks.length}
+                </span>
               </div>
 
-              {/* Lista de Tarjetas */}
-              <div className="space-y-3 flex-1 overflow-y-auto">
-                {colTasks.length === 0 ? (
-                  <div className="h-32 border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl flex items-center justify-center text-xs text-zinc-400 italic">
-                    Sin tareas en este estado
+              <div className="space-y-3 flex-1">
+                {columnTasks.length === 0 ? (
+                  <div className="h-36 flex items-center justify-center border border-dashed border-zinc-300 dark:border-zinc-800 rounded-xl text-xs text-zinc-400 dark:text-zinc-500 text-center px-4">
+                    Arrastra una tarjeta aquí o usa las flechas de movimiento
                   </div>
                 ) : (
-                  colTasks.map((task) => {
-                    const badge = getUrgencyBadge(task.dueDate, task.status);
+                  columnTasks.map((task) => {
+                    const urgency = getUrgencyBadge(task.dueDate, task.status);
+                    const isDragging = draggedTaskId === task.id;
 
                     return (
-                      <div
+                      <article
                         key={task.id}
-                        className="p-4 rounded-xl bg-white dark:bg-zinc-800/90 border border-zinc-200 dark:border-zinc-700/80 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3"
+                        draggable
+                        onDragStart={(e) => {
+                          setDraggedTaskId(task.id);
+                          e.dataTransfer.setData('text/plain', task.id);
+                          e.dataTransfer.effectAllowed = 'move';
+                        }}
+                        onDragEnd={() => {
+                          setDraggedTaskId(null);
+                          setDragOverColumn(null);
+                        }}
+                        className={`group p-4 rounded-xl bg-white dark:bg-[#111114] border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all space-y-3 cursor-grab active:cursor-grabbing ${
+                          isDragging ? 'opacity-50 scale-[0.98]' : ''
+                        }`}
                       >
-                        <div>
-                          {/* Badges superiores: Curso y Semáforo de Urgencia (HU07) */}
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <span className="px-2 py-0.5 rounded text-[10px] font-extrabold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <GripVertical className="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-600 shrink-0" />
+                            <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/50 text-[#C8102E] dark:text-rose-400">
                               {task.course.code}
                             </span>
-                            <span className={`px-2 py-0.5 rounded-md text-[10px] border ${badge.color}`}>
-                              {badge.label}
+                            <span className="font-mono text-[11px] font-medium text-zinc-500 dark:text-zinc-400 tabular-nums">
+                              {Math.round(task.weight * 100)}%
                             </span>
                           </div>
 
-                          <h4 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 leading-snug">
+                          <div className="flex items-center gap-1.5">
+                            {task.status !== 'COMPLETED' && urgency.isUrgent && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 text-[#C8102E] dark:text-rose-400">
+                                <AlertCircle className="w-3 h-3" />
+                                {urgency.label}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteTask(task.id, task.title)}
+                              aria-label={`Eliminar ${task.title}`}
+                              className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-zinc-400 hover:text-[#C8102E] transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h4 className="font-semibold text-sm text-zinc-900 dark:text-zinc-100 leading-snug">
                             {task.title}
                           </h4>
-
                           {task.description && (
-                            <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 line-clamp-2">
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 mt-1">
                               {task.description}
                             </p>
                           )}
                         </div>
 
-                        {/* Metadatos: Ponderación y Fecha Límite */}
-                        <div className="pt-2 border-t border-zinc-100 dark:border-zinc-700/50 flex items-center justify-between text-xs text-zinc-500">
-                          <span className="font-semibold text-zinc-800 dark:text-zinc-200">
-                            Peso: {(task.weight * 100).toFixed(0)}%
+                        <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 pt-2 border-t border-zinc-100 dark:border-zinc-800/80">
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {formatLimaDate(task.dueDate)}
                           </span>
-                          <span>Vence: {formatLimaDate(task.dueDate)}</span>
-                        </div>
 
-                        {/* Controles de Transición de Estados en un Clic (CA-04.2) */}
-                        <div className="flex items-center justify-between gap-2 pt-1">
-                          {col.id === 'PENDING' && (
+                          {task.score !== null ? (
+                            <span className="font-mono font-bold tabular-nums text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              {task.score.toFixed(1)}/20
+                            </span>
+                          ) : (
                             <button
-                              onClick={() => moveTaskStatus(task.id, 'IN_PROGRESS')}
-                              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 hover:bg-blue-100 transition-colors"
+                              type="button"
+                              onClick={() => onOpenGradeModal(task)}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-[#C8102E] dark:text-rose-400 hover:underline cursor-pointer"
                             >
-                              <span>Iniciar</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
+                              <Award className="w-3 h-3" />
+                              Calificar
                             </button>
                           )}
+                        </div>
 
-                          {col.id === 'IN_PROGRESS' && (
-                            <>
-                              <button
-                                onClick={() => moveTaskStatus(task.id, 'PENDING')}
-                                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-semibold bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 transition-colors"
-                              >
-                                <ArrowLeft className="w-3 h-3" />
-                                <span>Regresar</span>
-                              </button>
-                              <button
-                                onClick={() => moveTaskStatus(task.id, 'COMPLETED')}
-                                className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                              >
-                                <span>Terminar</span>
-                                <CheckCircle2 className="w-3 h-3" />
-                              </button>
-                            </>
+                        {/* Controles rápidos de columna */}
+                        <div className="flex items-center justify-between pt-2 gap-2">
+                          {col.id !== 'PENDING' ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                moveTaskStatus(
+                                  task.id,
+                                  col.id === 'COMPLETED'
+                                    ? 'IN_PROGRESS'
+                                    : 'PENDING'
+                                )
+                              }
+                              className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
+                            >
+                              <ArrowLeft className="w-3 h-3" />
+                              Retroceder
+                            </button>
+                          ) : (
+                            <span />
                           )}
 
-                          {col.id === 'COMPLETED' && (
-                            <div className="w-full flex items-center justify-between gap-2">
-                              <button
-                                onClick={() => moveTaskStatus(task.id, 'IN_PROGRESS')}
-                                className="px-2 py-1.5 rounded-lg text-[11px] font-semibold text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-700"
-                              >
-                                <ArrowLeft className="w-3 h-3" />
-                              </button>
-
-                              {task.score !== null ? (
-                                <div className="flex items-center gap-1 px-3 py-1 rounded-lg bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300 font-extrabold text-xs">
-                                  <Award className="w-3.5 h-3.5" />
-                                  <span>Nota: {task.score.toFixed(1)} / 20</span>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => onOpenGradeModal(task)}
-                                  className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-xs transition-colors"
-                                >
-                                  <Award className="w-3.5 h-3.5" />
-                                  <span>Registrar Nota</span>
-                                </button>
-                              )}
-                            </div>
+                          {col.id !== 'COMPLETED' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                moveTaskStatus(
+                                  task.id,
+                                  col.id === 'PENDING'
+                                    ? 'IN_PROGRESS'
+                                    : 'COMPLETED'
+                                )
+                              }
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-[#C8102E] hover:bg-[#A60D25] text-white transition-colors ml-auto cursor-pointer"
+                            >
+                              {col.id === 'PENDING' ? 'Iniciar' : 'Completar'}
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
                           )}
                         </div>
-                      </div>
+                      </article>
                     );
                   })
                 )}
               </div>
-            </div>
+            </section>
           );
         })}
       </div>

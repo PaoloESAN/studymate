@@ -86,3 +86,36 @@ export async function GET(request: Request) {
     );
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'El identificador de la asignatura es obligatorio.' },
+        { status: 400 }
+      );
+    }
+
+    await prisma.task.deleteMany({
+      where: { courseId: id },
+    });
+
+    await prisma.course.delete({
+      where: { id },
+    });
+
+    return NextResponse.json(
+      { message: 'Asignatura eliminada correctamente.' },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Error al eliminar curso:', error);
+    return NextResponse.json(
+      { error: 'No se pudo eliminar la asignatura.' },
+      { status: 500 }
+    );
+  }
+}

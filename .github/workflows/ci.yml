@@ -1,0 +1,51 @@
+name: StudyMate CI
+
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-and-build:
+    name: Typecheck, Lint, Tests & Build
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/studymate_ci?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/studymate_ci?schema=public
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Run ESLint
+        run: pnpm lint
+
+      - name: Run unit tests
+        run: node --experimental-strip-types --test tests/suite.test.ts
+
+      - name: Build Next.js application
+        run: npx next build
