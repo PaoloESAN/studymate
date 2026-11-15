@@ -221,11 +221,7 @@ export default function Navbar() {
               }}
               aria-label="Configuración"
               title="Configuración"
-              className={`p-2 rounded-lg border transition-colors cursor-pointer ${
-                agentUnlocked
-                  ? 'border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/30 text-[#C8102E] dark:text-rose-400'
-                  : 'border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700'
-              }`}
+              className="p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors cursor-pointer"
             >
               <Settings className="w-4 h-4" />
             </button>
