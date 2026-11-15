@@ -181,14 +181,10 @@ export function createStudyMateTools(
     {
       name: 'create_course',
       description:
-        'Registra una nueva asignatura universitaria en el ciclo actual.',
+        'Registra una nueva asignatura universitaria en el ciclo actual. Solo requiere nombre y créditos.',
       inputSchema: {
         type: 'object',
         properties: {
-          code: {
-            type: 'string',
-            description: 'Código del curso, por ejemplo IS-410',
-          },
           name: {
             type: 'string',
             description: 'Nombre completo de la asignatura',
@@ -198,14 +194,13 @@ export function createStudyMateTools(
             description: 'Número de créditos académicos (entre 1 y 10)',
           },
         },
-        required: ['code', 'name', 'credits'],
+        required: ['name', 'credits'],
       },
       execute: async (args) => {
         const res = await fetch('/api/courses', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            code: String(args.code || '').trim().toUpperCase(),
             name: String(args.name || '').trim(),
             credits: Number(args.credits || 4),
             userId: 'default-user',

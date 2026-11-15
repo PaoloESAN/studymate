@@ -263,7 +263,7 @@ export default function KanbanBoard({
                     : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-800'
                 }`}
               >
-                <span className="font-mono">{course.code}</span> ({count})
+                {course.name} ({count})
               </button>
             );
           })}
@@ -350,8 +350,8 @@ export default function KanbanBoard({
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-1.5 min-w-0">
                             <GripVertical className="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-600 shrink-0" />
-                            <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/50 text-[#C8102E] dark:text-rose-400">
-                              {task.course.code}
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/50 text-[#C8102E] dark:text-rose-400 truncate max-w-[140px]">
+                              {task.course.name}
                             </span>
                             <span className="font-mono text-[11px] font-medium text-zinc-500 dark:text-zinc-400 tabular-nums">
                               {Math.round(task.weight * 100)}%

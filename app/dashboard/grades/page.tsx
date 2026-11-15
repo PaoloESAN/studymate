@@ -175,14 +175,9 @@ export default function GradesPage() {
                     {/* Cabecera del Curso */}
                     <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-zinc-50/50 dark:bg-zinc-900/40">
                       <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-rose-50 dark:bg-rose-950/50 text-[#C8102E] dark:text-rose-400 border border-rose-200/70 dark:border-rose-900/60">
-                            {course.code}
-                          </span>
-                          <span className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
-                            {course.credits} créditos
-                          </span>
-                        </div>
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums block mb-0.5">
+                          {course.credits} créditos
+                        </span>
                         <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
                           {course.name}
                         </h2>

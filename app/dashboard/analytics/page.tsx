@@ -159,9 +159,6 @@ export default function AnalyticsPage() {
                             <div key={course.id} className="space-y-1.5">
                               <div className="flex justify-between items-baseline text-xs">
                                 <span className="font-semibold text-zinc-800 dark:text-zinc-200 truncate pr-3">
-                                  <span className="font-mono text-[#C8102E] dark:text-rose-400 mr-2">
-                                    {course.code}
-                                  </span>
                                   {course.name}
                                 </span>
                                 <span className="font-mono font-bold tabular-nums text-zinc-900 dark:text-zinc-100 shrink-0">
@@ -288,7 +285,7 @@ export default function AnalyticsPage() {
                         key={c.id}
                         className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400"
                       >
-                        <span className="truncate pr-2 font-mono">{c.code}</span>
+                        <span className="truncate pr-2">{c.name}</span>
                         <span className="font-mono tabular-nums font-semibold text-zinc-800 dark:text-zinc-200">
                           {c.credits} cr.
                         </span>

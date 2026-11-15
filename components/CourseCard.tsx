@@ -68,15 +68,10 @@ export default function CourseCard({
     <article className="group/card bg-white dark:bg-[#111114] border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden flex flex-col hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
       {/* Cabecera de Asignatura */}
       <div className="p-5 border-b border-zinc-100 dark:border-zinc-800/80">
-        <div className="flex items-center justify-between gap-2 mb-2.5">
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 text-[#C8102E] dark:text-rose-400 border border-rose-200/70 dark:border-rose-900/60">
-              {course.code}
-            </span>
-            <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 tabular-nums">
-              {course.credits} créditos
-            </span>
-          </div>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 tabular-nums">
+            {course.credits} créditos
+          </span>
 
           {onDeleteCourse && (
             <button

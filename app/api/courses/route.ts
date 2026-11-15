@@ -12,9 +12,9 @@ export async function POST(request: Request) {
     const { code, name, credits, userId } = body;
     const targetUserId = !userId || userId === 'default-user' ? 'u-paolo-01' : userId;
 
-    if (!code || !name || credits === undefined) {
+    if (!name || credits === undefined) {
       return NextResponse.json(
-        { error: 'Todos los campos son obligatorios (código, nombre y créditos).' },
+        { error: 'El nombre y los créditos de la asignatura son obligatorios.' },
         { status: 400 }
       );
     }
@@ -28,9 +28,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const normalizedCode =
+      typeof code === 'string' && code.trim().length > 0
+        ? code.trim().toUpperCase()
+        : `ASIG-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+
     const newCourse = await prisma.course.create({
       data: {
-        code: code.trim().toUpperCase(),
+        code: normalizedCode,
         name: name.trim(),
         credits: parsedCredits,
         userId: targetUserId,
