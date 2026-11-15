@@ -115,6 +115,76 @@ function base64ToInt16Array(base64: string): Int16Array {
   return new Int16Array(bytes.buffer);
 }
 
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  const tokens = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+  return tokens.map((token, idx) => {
+    if (token.startsWith('**') && token.endsWith('**') && token.length > 4) {
+      return (
+        <strong key={idx} className="font-bold text-zinc-950 dark:text-white">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (token.startsWith('`') && token.endsWith('`') && token.length > 2) {
+      return (
+        <code
+          key={idx}
+          className="px-1 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 font-mono text-[11px]"
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+    if (token.startsWith('*') && token.endsWith('*') && token.length > 2) {
+      return (
+        <em key={idx} className="italic">
+          {token.slice(1, -1)}
+        </em>
+      );
+    }
+    return <React.Fragment key={idx}>{token}</React.Fragment>;
+  });
+}
+
+function renderFormattedMessage(raw: string): React.ReactNode {
+  // Normaliza listas inline como ": * **Curso:**" a líneas separadas
+  const normalized = raw
+    .replace(/:\s+\*\s+/g, ':\n* ')
+    .replace(/\s+\*\s+(?=\*\*)/g, '\n* ');
+
+  const lines = normalized.split(/\r?\n/);
+  const blocks: React.ReactNode[] = [];
+  let listItems: string[] = [];
+
+  const flushList = (keyPrefix: number) => {
+    if (listItems.length === 0) return;
+    blocks.push(
+      <ul key={`ul-${keyPrefix}`} className="list-disc pl-4 space-y-1">
+        {listItems.map((item, i) => (
+          <li key={i}>{renderInlineMarkdown(item)}</li>
+        ))}
+      </ul>
+    );
+    listItems = [];
+  };
+
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    const bulletMatch = trimmed.match(/^(?:[-*]|\d+\.)\s+(.*)$/);
+    if (bulletMatch) {
+      listItems.push(bulletMatch[1]);
+    } else {
+      flushList(idx);
+      if (trimmed.length > 0) {
+        blocks.push(<p key={`p-${idx}`}>{renderInlineMarkdown(trimmed)}</p>);
+      }
+    }
+  });
+  flushList(lines.length);
+
+  return <div className="space-y-1.5">{blocks}</div>;
+}
+
 function summarizeToolAction(
   name: string,
   result: Record<string, unknown>
@@ -818,10 +888,12 @@ export default function VoiceWebMcpAssistant() {
                   className={`px-3 py-2 rounded-xl border leading-relaxed ${
                     entry.role === 'user'
                       ? 'bg-zinc-50 dark:bg-zinc-900/90 border-zinc-200/80 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300'
-                      : 'bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-700/80 text-zinc-900 dark:text-zinc-100 font-medium'
+                      : 'bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-700/80 text-zinc-800 dark:text-zinc-200'
                   }`}
                 >
-                  {entry.text}
+                  {entry.role === 'assistant'
+                    ? renderFormattedMessage(entry.text)
+                    : entry.text}
                 </div>
               );
             })
