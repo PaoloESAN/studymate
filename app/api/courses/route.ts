@@ -12,9 +12,9 @@ export async function POST(request: Request) {
     const { code, name, credits, userId } = body;
     const targetUserId = !userId || userId === 'default-user' ? 'u-paolo-01' : userId;
 
-    if (!code || !name || credits === undefined) {
+    if (!name || credits === undefined) {
       return NextResponse.json(
-        { error: 'Todos los campos son obligatorios (código, nombre y créditos).' },
+        { error: 'El nombre y los créditos de la asignatura son obligatorios.' },
         { status: 400 }
       );
     }
@@ -28,9 +28,14 @@ export async function POST(request: Request) {
       );
     }
 
+    const normalizedCode =
+      typeof code === 'string' && code.trim().length > 0
+        ? code.trim().toUpperCase()
+        : `ASIG-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+
     const newCourse = await prisma.course.create({
       data: {
-        code: code.trim().toUpperCase(),
+        code: normalizedCode,
         name: name.trim(),
         credits: parsedCredits,
         userId: targetUserId,
@@ -82,6 +87,39 @@ export async function GET(request: Request) {
     console.error('Error al obtener cursos:', error);
     return NextResponse.json(
       { error: 'Error al obtener las asignaturas.' },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { error: 'El identificador de la asignatura es obligatorio.' },
+        { status: 400 }
+      );
+    }
+
+    await prisma.task.deleteMany({
+      where: { courseId: id },
+    });
+
+    await prisma.course.delete({
+      where: { id },
+    });
+
+    return NextResponse.json(
+      { message: 'Asignatura eliminada correctamente.' },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Error al eliminar curso:', error);
+    return NextResponse.json(
+      { error: 'No se pudo eliminar la asignatura.' },
       { status: 500 }
     );
   }

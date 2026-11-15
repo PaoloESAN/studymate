@@ -1,9 +1,8 @@
-// components/ScoreModal.tsx - Modal de Registro de Calificaciones Vigesimales (0 a 20) (HU06)
-// Criterios de Aceptación: CA-06.1 y CA-06.2
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Award, AlertTriangle } from 'lucide-react';
+import { useToast } from '@/app/providers';
 
 interface ScoreModalProps {
   isOpen: boolean;
@@ -22,9 +21,21 @@ export default function ScoreModal({
   currentScore,
   onScoreUpdated,
 }: ScoreModalProps) {
-  const [score, setScore] = useState<string>(currentScore !== null ? String(currentScore) : '17.0');
+  const { showToast } = useToast();
+  const [score, setScore] = useState<string>(
+    currentScore !== null ? String(currentScore) : '16.0'
+  );
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -34,7 +45,6 @@ export default function ScoreModal({
 
     const numericScore = parseFloat(score);
 
-    // CA-06.2: Validación estricta de escala vigesimal 0 a 20
     if (isNaN(numericScore) || numericScore < 0 || numericScore > 20) {
       setError('La calificación debe estar en la escala vigesimal de 0 a 20.');
       return;
@@ -48,7 +58,7 @@ export default function ScoreModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           score: numericScore,
-          status: 'COMPLETED', // Al calificar una tarea, pasa automáticamente a COMPLETED (CA-04.3)
+          status: 'COMPLETED',
         }),
       });
 
@@ -61,86 +71,104 @@ export default function ScoreModal({
       }
 
       setLoading(false);
+      showToast(`Calificación ${numericScore.toFixed(1)} guardada en ${taskTitle}`);
       onScoreUpdated();
       onClose();
-    } catch (err) {
+    } catch {
       setError('Error de conexión con el servidor.');
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden">
-        {/* Cabecera */}
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-800/50">
-          <div className="flex items-center gap-2">
-            <Award className="w-5 h-5 text-red-600" />
-            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-              Registrar Calificación
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="score-modal-title"
+        onClick={(e) => e.stopPropagation()}
+        className="bg-white dark:bg-[#111114] border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden"
+      >
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/70 dark:bg-zinc-900/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-rose-50 dark:bg-rose-950/50 text-[#C8102E] dark:text-rose-400 flex items-center justify-center">
+              <Award className="w-4 h-4" />
+            </div>
+            <h2
+              id="score-modal-title"
+              className="text-base font-bold text-zinc-900 dark:text-zinc-50"
+            >
+              Registrar calificación
             </h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+            aria-label="Cerrar diálogo"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/70 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Formulario */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div>
-            <p className="text-xs text-zinc-500 mb-1">Evaluación:</p>
-            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 line-clamp-1">{taskTitle}</p>
+            <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">
+              Evaluación
+            </p>
+            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 line-clamp-2">
+              {taskTitle}
+            </p>
           </div>
 
           {error && (
-            <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/60 border border-red-300 dark:border-red-800 flex items-start gap-2.5 text-red-700 dark:text-red-300 text-xs">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+            <div
+              role="alert"
+              className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 flex items-start gap-2.5 text-rose-700 dark:text-rose-300 text-xs"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#C8102E]" />
               <span>{error}</span>
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-1.5">
-              Nota Obtenida (Escala 0 a 20) *
+            <label
+              htmlFor="score-input"
+              className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2"
+            >
+              Nota obtenida (escala 0.0 – 20.0)
             </label>
-            <div className="relative">
-              <input
-                type="number"
-                step="0.1"
-                min="0"
-                max="20"
-                required
-                value={score}
-                onChange={(e) => setScore(e.target.value)}
-                placeholder="17.0"
-                className="w-full px-4 py-3 text-xl font-extrabold rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
-              <span className="absolute right-4 top-3.5 text-sm font-bold text-zinc-400">
-                / 20
-              </span>
-            </div>
-            <p className="text-[11px] text-zinc-500 mt-1">
-              Nota aprobatoria mínima en ESAN: 10.5
-            </p>
+            <input
+              id="score-input"
+              type="number"
+              step="0.1"
+              min="0"
+              max="20"
+              required
+              autoFocus
+              value={score}
+              onChange={(e) => setScore(e.target.value)}
+              className="w-full px-4 py-3 text-center text-2xl font-mono font-bold tabular-nums rounded-xl border border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-[#C8102E]/40 focus:border-[#C8102E]"
+            />
           </div>
 
-          <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex justify-end gap-3">
+          <div className="flex items-center justify-end gap-2.5 pt-1">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              className="px-4 py-2 rounded-xl text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2 rounded-xl text-sm font-bold bg-red-600 hover:bg-red-700 text-white shadow-md shadow-red-600/20 disabled:opacity-50 transition-all"
+              className="px-5 py-2 rounded-xl text-sm font-semibold bg-[#C8102E] hover:bg-[#A60D25] text-white transition-colors disabled:opacity-50 cursor-pointer"
             >
-              {loading ? 'Guardando...' : 'Guardar Nota'}
+              {loading ? 'Guardando...' : 'Guardar nota'}
             </button>
           </div>
         </form>
