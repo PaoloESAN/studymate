@@ -61,6 +61,7 @@ interface BrowserModelContext {
 
 export const STUDYMATE_DATA_UPDATED_EVENT = 'studymate:data-updated';
 export const STUDYMATE_UI_COMMAND_EVENT = 'studymate:ui-command';
+export const STUDYMATE_AGENT_STATE_EVENT = 'studymate:agent-state';
 
 function notifyDataUpdated() {
   if (typeof window !== 'undefined') {
