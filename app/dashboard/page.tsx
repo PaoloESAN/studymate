@@ -65,7 +65,7 @@ export default function DashboardPage() {
 
   // Formulario nuevo curso
   const [newName, setNewName] = useState('');
-  const [newCredits, setNewCredits] = useState('4');
+  const [newCredits, setNewCredits] = useState('');
   const [courseError, setCourseError] = useState<string | null>(null);
   const [courseLoading, setCourseLoading] = useState(false);
 
@@ -135,7 +135,7 @@ export default function DashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newName.trim(),
-          credits: parseInt(newCredits, 10),
+          credits: newCredits.trim() ? parseInt(newCredits, 10) : 3,
           userId,
         }),
       });
@@ -150,7 +150,7 @@ export default function DashboardPage() {
 
       const createdName = newName.trim();
       setNewName('');
-      setNewCredits('4');
+      setNewCredits('');
       setIsCourseModalOpen(false);
       setCourseLoading(false);
       showToast(`Asignatura "${createdName}" registrada`);
@@ -504,14 +504,14 @@ export default function DashboardPage() {
                     htmlFor="course-credits"
                     className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5"
                   >
-                    Créditos académicos
+                    Créditos académicos (opcional)
                   </label>
                   <input
                     id="course-credits"
                     type="number"
                     min="1"
                     max="10"
-                    required
+                    placeholder="3"
                     value={newCredits}
                     onChange={(e) => setNewCredits(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-sm font-mono tabular-nums text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#C8102E]/40 focus:border-[#C8102E]"

@@ -201,7 +201,7 @@ export function createStudyMateTools(
     {
       name: 'create_course',
       description:
-        'Registra una nueva asignatura universitaria en el ciclo actual. Solo requiere nombre y créditos.',
+        'Registra una nueva asignatura universitaria en el ciclo actual. Solo requiere nombre; si no se indican créditos, usa 3 por defecto.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -211,10 +211,11 @@ export function createStudyMateTools(
           },
           credits: {
             type: 'integer',
-            description: 'Número de créditos académicos (entre 1 y 10)',
+            description:
+              'Número de créditos académicos opcional (entre 1 y 10; por defecto 3)',
           },
         },
-        required: ['name', 'credits'],
+        required: ['name'],
       },
       execute: async (args) => {
         const userId = getStoredUserId();
@@ -224,7 +225,10 @@ export function createStudyMateTools(
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: String(args.name || '').trim(),
-            credits: Number(args.credits || 4),
+            credits:
+              args.credits !== undefined && args.credits !== null
+                ? Number(args.credits)
+                : 3,
             userId,
           }),
         });

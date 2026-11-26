@@ -19,15 +19,18 @@ export async function POST(request: Request) {
     }
     const targetUserId = String(userId);
 
-    if (typeof name !== 'string' || !name.trim() || credits === undefined) {
+    if (typeof name !== 'string' || !name.trim()) {
       return NextResponse.json(
-        { error: 'El nombre y los créditos de la asignatura son obligatorios.' },
+        { error: 'El nombre de la asignatura es obligatorio.' },
         { status: 400 }
       );
     }
 
-    // Mitigación BUG-02: Conversión explícita y validación de entero positivo
-    const parsedCredits = parseInt(String(credits), 10);
+    // Mitigación BUG-02: Conversión explícita y validación de entero positivo (por defecto 3)
+    const parsedCredits =
+      credits === undefined || credits === null || credits === ''
+        ? 3
+        : parseInt(String(credits), 10);
     if (isNaN(parsedCredits) || parsedCredits <= 0) {
       return NextResponse.json(
         { error: 'El número de créditos debe ser un entero mayor a 0.' },
