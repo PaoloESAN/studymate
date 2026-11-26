@@ -1,5 +1,6 @@
 import { calculateSemesterGPA } from '@/lib/gradeCalculator';
 import { prioritizeStudyTasks } from '@/lib/studyPrioritizer';
+import { getStoredUserId } from '@/lib/authClient';
 
 export interface WebMcpToolSchema {
   type: 'object';
@@ -79,7 +80,9 @@ function dispatchUiCommand(command: StudyMateUiCommand) {
 }
 
 async function fetchCoursesList(): Promise<ApiCourse[]> {
-  const res = await fetch('/api/courses?userId=default-user');
+  const userId = getStoredUserId();
+  if (!userId) throw new Error('Usuario no autenticado.');
+  const res = await fetch(`/api/courses?userId=${encodeURIComponent(userId)}`);
   if (!res.ok) throw new Error('No se pudieron obtener las asignaturas.');
   return (await res.json()) as ApiCourse[];
 }
@@ -214,13 +217,15 @@ export function createStudyMateTools(
         required: ['name', 'credits'],
       },
       execute: async (args) => {
+        const userId = getStoredUserId();
+        if (!userId) return { ok: false, error: 'Usuario no autenticado.' };
         const res = await fetch('/api/courses', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: String(args.name || '').trim(),
             credits: Number(args.credits || 4),
-            userId: 'default-user',
+            userId,
           }),
         });
         const data = (await res.json()) as Record<string, unknown>;
@@ -249,10 +254,11 @@ export function createStudyMateTools(
         if (!course) {
           return { ok: false, error: 'No se encontró esa asignatura.' };
         }
-        const res = await fetch(
-          `/api/courses?id=${encodeURIComponent(course.id)}`,
-          { method: 'DELETE' }
-        );
+        const userId = getStoredUserId();
+        const query = userId
+          ? `id=${encodeURIComponent(course.id)}&userId=${encodeURIComponent(userId)}`
+          : `id=${encodeURIComponent(course.id)}`;
+        const res = await fetch(`/api/courses?${query}`, { method: 'DELETE' });
         const data = (await res.json()) as Record<string, unknown>;
         if (!res.ok) return { ok: false, error: data.error };
         notifyDataUpdated();
@@ -647,6 +653,8 @@ export function createStudyMateTools(
       execute: async () => {
         if (typeof window !== 'undefined') {
           localStorage.removeItem('studymate_user');
+          sessionStorage.removeItem('studymate_pending_kanban_filter');
+          sessionStorage.removeItem('studymate_pending_target_grade');
           navigate('/login');
         }
         return { ok: true };

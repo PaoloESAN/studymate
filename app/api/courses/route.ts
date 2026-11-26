@@ -10,9 +10,16 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { code, name, credits, userId } = body;
-    const targetUserId = !userId || userId === 'default-user' ? 'u-paolo-01' : userId;
 
-    if (!name || credits === undefined) {
+    if (!userId || userId === 'default-user') {
+      return NextResponse.json(
+        { error: 'El identificador del usuario es obligatorio.' },
+        { status: 400 }
+      );
+    }
+    const targetUserId = String(userId);
+
+    if (typeof name !== 'string' || !name.trim() || credits === undefined) {
       return NextResponse.json(
         { error: 'El nombre y los créditos de la asignatura son obligatorios.' },
         { status: 400 }
@@ -32,6 +39,18 @@ export async function POST(request: Request) {
       typeof code === 'string' && code.trim().length > 0
         ? code.trim().toUpperCase()
         : `ASIG-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+
+    const existingUser = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+
+    if (!existingUser) {
+      return NextResponse.json(
+        { error: 'La sesión del usuario no es válida. Vuelve a iniciar sesión.' },
+        { status: 401 }
+      );
+    }
 
     const newCourse = await prisma.course.create({
       data: {
@@ -58,8 +77,13 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
 
-    // Si viene default-user o sin ID, enlaza al usuario predeterminado de la demo (Paolo Guzman)
-    const targetUserId = !userId || userId === 'default-user' ? 'u-paolo-01' : userId;
+    if (!userId || userId === 'default-user') {
+      return NextResponse.json(
+        { error: 'El identificador del usuario es obligatorio.' },
+        { status: 400 }
+      );
+    }
+    const targetUserId = userId;
 
     const courses = await prisma.course.findMany({
       where: { userId: targetUserId },
@@ -96,6 +120,7 @@ export async function DELETE(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get('id');
+    const userId = searchParams.get('userId');
 
     if (!id) {
       return NextResponse.json(
@@ -104,13 +129,19 @@ export async function DELETE(req: Request) {
       );
     }
 
-    await prisma.task.deleteMany({
-      where: { courseId: id },
+    const deleted = await prisma.course.deleteMany({
+      where: {
+        id,
+        ...(userId ? { userId } : {}),
+      },
     });
 
-    await prisma.course.delete({
-      where: { id },
-    });
+    if (deleted.count === 0) {
+      return NextResponse.json(
+        { error: 'Asignatura no encontrada o sin permisos para eliminarla.' },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json(
       { message: 'Asignatura eliminada correctamente.' },

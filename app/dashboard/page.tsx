@@ -9,6 +9,7 @@ import ScoreModal from '@/components/ScoreModal';
 import { calculateSemesterGPA } from '@/lib/gradeCalculator';
 import { prioritizeStudyTasks } from '@/lib/studyPrioritizer';
 import { STUDYMATE_DATA_UPDATED_EVENT } from '@/lib/webmcp';
+import { getStoredUserId } from '@/lib/authClient';
 import { useToast } from '@/app/providers';
 import {
   Plus,
@@ -69,8 +70,13 @@ export default function DashboardPage() {
   const [courseLoading, setCourseLoading] = useState(false);
 
   const fetchCourses = useCallback(async () => {
+    const userId = getStoredUserId();
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     try {
-      const res = await fetch('/api/courses?userId=default-user');
+      const res = await fetch(`/api/courses?userId=${encodeURIComponent(userId)}`);
       if (res.ok) {
         const data = await res.json();
         setCourses(data);
@@ -84,7 +90,9 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/courses?userId=default-user')
+    const userId = getStoredUserId();
+    if (!userId) return;
+    fetch(`/api/courses?userId=${encodeURIComponent(userId)}`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
         setCourses(data);
@@ -116,13 +124,19 @@ export default function DashboardPage() {
     setCourseLoading(true);
 
     try {
+      const userId = getStoredUserId();
+      if (!userId) {
+        setCourseError('Sesión inválida. Vuelve a iniciar sesión.');
+        setCourseLoading(false);
+        return;
+      }
       const res = await fetch('/api/courses', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: newName.trim(),
           credits: parseInt(newCredits, 10),
-          userId: 'default-user',
+          userId,
         }),
       });
 
@@ -163,7 +177,11 @@ export default function DashboardPage() {
 
   const handleDeleteCourse = async (courseId: string, courseName: string) => {
     try {
-      const res = await fetch(`/api/courses?id=${encodeURIComponent(courseId)}`, {
+      const userId = getStoredUserId();
+      const query = userId
+        ? `id=${encodeURIComponent(courseId)}&userId=${encodeURIComponent(userId)}`
+        : `id=${encodeURIComponent(courseId)}`;
+      const res = await fetch(`/api/courses?${query}`, {
         method: 'DELETE',
       });
       if (!res.ok) {
@@ -214,7 +232,10 @@ export default function DashboardPage() {
 
             <button
               type="button"
-              onClick={() => setIsCourseModalOpen(true)}
+              onClick={() => {
+                setCourseError(null);
+                setIsCourseModalOpen(true);
+              }}
               className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-[#C8102E] hover:bg-[#A60D25] text-white shadow-xs transition-colors cursor-pointer shrink-0"
             >
               <Plus className="w-4 h-4" />

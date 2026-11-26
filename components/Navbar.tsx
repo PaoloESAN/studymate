@@ -115,6 +115,8 @@ export default function Navbar() {
 
   const handleLogout = () => {
     localStorage.removeItem('studymate_user');
+    sessionStorage.removeItem('studymate_pending_kanban_filter');
+    sessionStorage.removeItem('studymate_pending_target_grade');
     router.push('/login');
   };
 

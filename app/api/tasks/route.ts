@@ -10,10 +10,28 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { title, description, dueDate, weight, courseId } = body;
 
-    if (!title || !dueDate || weight === undefined || !courseId) {
+    if (
+      typeof title !== 'string' ||
+      !title.trim() ||
+      !dueDate ||
+      weight === undefined ||
+      !courseId
+    ) {
       return NextResponse.json(
         { error: 'Faltan parámetros requeridos (título, fecha de vencimiento, ponderación o courseId).' },
         { status: 400 }
+      );
+    }
+
+    const courseExists = await prisma.course.findUnique({
+      where: { id: courseId },
+      select: { id: true },
+    });
+
+    if (!courseExists) {
+      return NextResponse.json(
+        { error: 'La asignatura seleccionada no existe.' },
+        { status: 404 }
       );
     }
 
@@ -34,11 +52,19 @@ export async function POST(request: Request) {
       );
     }
 
+    const parsedDueDate = new Date(dueDate);
+    if (isNaN(parsedDueDate.getTime())) {
+      return NextResponse.json(
+        { error: 'La fecha de vencimiento proporcionada no es válida.' },
+        { status: 422 }
+      );
+    }
+
     const newTask = await prisma.task.create({
       data: {
         title: title.trim(),
         description: description ? description.trim() : null,
-        dueDate: new Date(dueDate),
+        dueDate: parsedDueDate,
         weight: numericWeight,
         courseId,
         status: 'PENDING',

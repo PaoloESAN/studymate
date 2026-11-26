@@ -9,6 +9,7 @@ import {
   STUDYMATE_UI_COMMAND_EVENT,
   StudyMateUiCommand,
 } from '@/lib/webmcp';
+import { getStoredUserId } from '@/lib/authClient';
 import { Award, SlidersHorizontal, CheckCircle2 } from 'lucide-react';
 
 interface GradeTask {
@@ -50,8 +51,13 @@ export default function GradesPage() {
   const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
 
   const loadCourses = useCallback(async () => {
+    const userId = getStoredUserId();
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     try {
-      const res = await fetch('/api/courses?userId=default-user');
+      const res = await fetch(`/api/courses?userId=${encodeURIComponent(userId)}`);
       if (res.ok) {
         const data = await res.json();
         setCourses(data);
@@ -64,7 +70,9 @@ export default function GradesPage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/courses?userId=default-user')
+    const userId = getStoredUserId();
+    if (!userId) return;
+    fetch(`/api/courses?userId=${encodeURIComponent(userId)}`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setCourses(data))
       .catch((err) => console.error('Error cargando calificaciones:', err))

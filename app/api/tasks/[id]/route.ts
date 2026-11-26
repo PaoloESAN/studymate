@@ -25,14 +25,33 @@ export async function PATCH(
       }
     }
 
+    const validStatuses: TaskStatus[] = ['PENDING', 'IN_PROGRESS', 'COMPLETED'];
+    if (status !== undefined && !validStatuses.includes(status as TaskStatus)) {
+      return NextResponse.json(
+        { error: 'El estado de la tarea no es válido.' },
+        { status: 422 }
+      );
+    }
+
+    let parsedDueDate: Date | undefined;
+    if (dueDate !== undefined) {
+      parsedDueDate = new Date(dueDate);
+      if (isNaN(parsedDueDate.getTime())) {
+        return NextResponse.json(
+          { error: 'La fecha de vencimiento proporcionada no es válida.' },
+          { status: 422 }
+        );
+      }
+    }
+
     const updatedTask = await prisma.task.update({
       where: { id },
       data: {
         ...(status && { status: status as TaskStatus }),
         ...(score !== undefined && { score: score === null ? null : parseFloat(String(score)) }),
-        ...(title && { title: title.trim() }),
-        ...(description !== undefined && { description: description ? description.trim() : null }),
-        ...(dueDate && { dueDate: new Date(dueDate) }),
+        ...(typeof title === 'string' && title.trim() && { title: title.trim() }),
+        ...(description !== undefined && { description: description ? String(description).trim() : null }),
+        ...(parsedDueDate && { dueDate: parsedDueDate }),
       },
       include: {
         course: {
@@ -62,9 +81,16 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    await prisma.task.delete({
+    const deleted = await prisma.task.deleteMany({
       where: { id },
     });
+
+    if (deleted.count === 0) {
+      return NextResponse.json(
+        { error: 'La tarea no existe o ya fue eliminada.' },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json(
       { message: 'Tarea eliminada exitosamente respetando integridad referencial.' },

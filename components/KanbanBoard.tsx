@@ -39,7 +39,7 @@ interface KanbanBoardProps {
   initialTasks: KanbanTask[];
   courses: Array<{ id: string; code: string; name: string }>;
   onOpenGradeModal: (task: KanbanTask) => void;
-  onTasksChanged?: () => void;
+  onTasksChanged?: () => void | Promise<void>;
 }
 
 export default function KanbanBoard({
@@ -178,6 +178,12 @@ export default function KanbanBoard({
               ? 'En curso'
               : 'Completado';
         showToast(`"${target.title}" movida a ${label}`);
+        await onTasksChanged?.();
+        setStatusOverrides((prev) => {
+          const next = { ...prev };
+          delete next[taskId];
+          return next;
+        });
       }
     } catch {
       setStatusOverrides((prev) => {

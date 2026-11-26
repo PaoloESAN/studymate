@@ -52,13 +52,20 @@ export default function TaskModal({
     setLoading(true);
 
     try {
+      const parsedDueDate = new Date(dueDate);
+      if (isNaN(parsedDueDate.getTime())) {
+        setError('La fecha de entrega ingresada no es válida.');
+        setLoading(false);
+        return;
+      }
+
       const res = await fetch('/api/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title,
           description,
-          dueDate,
+          dueDate: parsedDueDate.toISOString(),
           weight: numericWeight,
           courseId,
         }),

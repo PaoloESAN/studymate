@@ -2,18 +2,12 @@
 
 import React, { useEffect, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
+import { getStoredUser } from '@/lib/authClient';
 
 const emptySubscribe = () => () => {};
 
 function getStoredAuth(): boolean {
-  try {
-    const raw = localStorage.getItem('studymate_user');
-    if (!raw) return false;
-    const parsed = JSON.parse(raw);
-    return Boolean(parsed && parsed.email);
-  } catch {
-    return false;
-  }
+  return Boolean(getStoredUser());
 }
 
 interface AuthGuardProps {

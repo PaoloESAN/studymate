@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import AuthGuard from '@/components/AuthGuard';
 import { calculateSemesterGPA } from '@/lib/gradeCalculator';
+import { getStoredUserId } from '@/lib/authClient';
 import {
   TrendingUp,
   CheckCircle2,
@@ -29,7 +30,9 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/courses?userId=default-user')
+    const userId = getStoredUserId();
+    if (!userId) return;
+    fetch(`/api/courses?userId=${encodeURIComponent(userId)}`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => setCourses(data))
       .catch((err) => console.error('Error en analítica:', err))

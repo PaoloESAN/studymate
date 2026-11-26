@@ -32,6 +32,22 @@ interface ChatEntry {
   id: string;
   role: 'user' | 'assistant' | 'action';
   text: string;
+  source?: 'text' | 'voice';
+}
+
+function trimHistorySafely(history: GeminiContent[], maxItems = 16): GeminiContent[] {
+  if (history.length <= maxItems) return history;
+  const start = history.length - maxItems;
+  for (let i = start; i < history.length; i++) {
+    const turn = history[i];
+    if (
+      turn.role === 'user' &&
+      turn.parts.every((p) => !p.functionResponse)
+    ) {
+      return history.slice(i);
+    }
+  }
+  return [];
 }
 
 interface GeminiContentPart {
@@ -254,6 +270,7 @@ export default function VoiceWebMcpAssistant() {
   const nextPlayTimeRef = useRef<number>(0);
   const isMutedRef = useRef<boolean>(false);
   const setupCompleteRef = useRef<boolean>(false);
+  const sessionIdRef = useRef<number>(0);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -276,7 +293,7 @@ export default function VoiceWebMcpAssistant() {
       if (!chunk) return;
       setEntries((prev) => {
         const last = prev[prev.length - 1];
-        if (last && last.role === role) {
+        if (last && last.role === role && last.source === 'voice') {
           return [
             ...prev.slice(0, -1),
             { ...last, text: `${last.text}${chunk}` },
@@ -288,6 +305,7 @@ export default function VoiceWebMcpAssistant() {
             id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             role,
             text: chunk,
+            source: 'voice',
           },
         ];
       });
@@ -296,13 +314,18 @@ export default function VoiceWebMcpAssistant() {
   );
 
   const addEntry = useCallback(
-    (role: 'user' | 'assistant' | 'action', text: string) => {
+    (
+      role: 'user' | 'assistant' | 'action',
+      text: string,
+      source: 'text' | 'voice' = 'text'
+    ) => {
       setEntries((prev) => [
         ...prev.slice(-24),
         {
           id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           role,
           text,
+          source,
         },
       ]);
     },
@@ -326,6 +349,7 @@ export default function VoiceWebMcpAssistant() {
   }, []);
 
   const stopVoiceSession = useCallback(() => {
+    sessionIdRef.current += 1;
     stopAllPlayback();
 
     if (workletNodeRef.current) {
@@ -438,6 +462,7 @@ export default function VoiceWebMcpAssistant() {
 
   const startVoiceSession = async () => {
     if (voiceState !== 'idle') return;
+    const currentSessionId = ++sessionIdRef.current;
     setIsOpen(true);
     setVoiceState('connecting');
 
@@ -448,6 +473,8 @@ export default function VoiceWebMcpAssistant() {
         model?: string;
         error?: string;
       };
+
+      if (sessionIdRef.current !== currentSessionId) return;
 
       if (!tokenRes.ok || !tokenData.wsUrl || !tokenData.model) {
         showToast(
@@ -467,13 +494,28 @@ export default function VoiceWebMcpAssistant() {
           autoGainControl: true,
         },
       });
+      if (sessionIdRef.current !== currentSessionId) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       micStreamRef.current = stream;
 
       const captureCtx = new AudioContext({ sampleRate: 16000 });
       await captureCtx.resume();
+      if (sessionIdRef.current !== currentSessionId) {
+        captureCtx.close().catch(() => {});
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       captureCtxRef.current = captureCtx;
       const playbackCtx = new AudioContext({ sampleRate: 24000 });
       await playbackCtx.resume();
+      if (sessionIdRef.current !== currentSessionId) {
+        playbackCtx.close().catch(() => {});
+        captureCtx.close().catch(() => {});
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       playbackCtxRef.current = playbackCtx;
       nextPlayTimeRef.current = playbackCtx.currentTime;
 
@@ -681,11 +723,31 @@ export default function VoiceWebMcpAssistant() {
   const handleSendText = async (e: React.FormEvent) => {
     e.preventDefault();
     const message = textInput.trim();
-    if (!message || isSendingText) return;
+    if (!message || isSendingText || voiceState === 'connecting') return;
 
     setTextInput('');
+    addEntry('user', message, 'text');
+
+    // Si hay una sesión de voz en vivo activa, enviar el texto al mismo WebSocket
+    // para mantener un solo contexto y evitar colisiones entre dos modelos a la vez.
+    if (
+      wsRef.current &&
+      wsRef.current.readyState === WebSocket.OPEN &&
+      setupCompleteRef.current
+    ) {
+      stopAllPlayback();
+      wsRef.current.send(
+        JSON.stringify({
+          clientContent: {
+            turns: [{ role: 'user', parts: [{ text: message }] }],
+            turnComplete: true,
+          },
+        })
+      );
+      return;
+    }
+
     setIsSendingText(true);
-    addEntry('user', message);
 
     const functionDeclarations = toolsRef.current.map((t) => ({
       name: t.name,
@@ -757,7 +819,7 @@ export default function VoiceWebMcpAssistant() {
         break;
       }
 
-      textHistoryRef.current = currentHistory.slice(-16);
+      textHistoryRef.current = trimHistorySafely(currentHistory, 16);
     } catch {
       addEntry('action', 'Error de conexión con el agente de texto.');
     } finally {
@@ -771,16 +833,36 @@ export default function VoiceWebMcpAssistant() {
 
   if (!isOpen) {
     return (
-      <button
-        type="button"
-        onClick={() => setIsOpen(true)}
-        aria-label="Abrir Agente"
-        title="Abrir Agente (Voz y Chat IA)"
-        className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#C8102E] hover:bg-[#A60D25] text-white text-xs font-semibold shadow-lg transition-all cursor-pointer"
-      >
-        <Sparkles className="w-4 h-4" />
-        <span>Agente</span>
-      </button>
+      <div className="fixed bottom-5 right-5 z-40 flex items-center gap-2">
+        {voiceState !== 'idle' && (
+          <button
+            type="button"
+            onClick={stopVoiceSession}
+            aria-label="Detener voz"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-full bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-white text-white dark:text-zinc-900 text-xs font-semibold shadow-lg transition-all cursor-pointer"
+          >
+            <Square className="w-3 h-3 fill-current" />
+            <span>Parar</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          aria-label="Abrir Agente"
+          title="Abrir Agente (Voz y Chat IA)"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-[#C8102E] hover:bg-[#A60D25] text-white text-xs font-semibold shadow-lg transition-all cursor-pointer"
+        >
+          {voiceState !== 'idle' ? (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+            </span>
+          ) : (
+            <Sparkles className="w-4 h-4" />
+          )}
+          <span>{voiceState !== 'idle' ? 'Voz activa' : 'Agente'}</span>
+        </button>
+      </div>
     );
   }
 
@@ -910,13 +992,20 @@ export default function VoiceWebMcpAssistant() {
             type="text"
             value={textInput}
             onChange={(e) => setTextInput(e.target.value)}
-            placeholder="Escribe una orden (ej. simula 18)..."
+            disabled={voiceState === 'connecting'}
+            placeholder={
+              voiceState === 'connecting'
+                ? 'Conectando voz...'
+                : voiceState !== 'idle'
+                  ? 'Escribe al agente en vivo...'
+                  : 'Escribe una orden (ej. simula 18)...'
+            }
             aria-label="Mensaje para el agente"
-            className="flex-1 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-[#C8102E]/40 focus:border-[#C8102E]"
+            className="flex-1 px-3 py-2 text-xs rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-[#C8102E]/40 focus:border-[#C8102E]"
           />
           <button
             type="submit"
-            disabled={isSendingText || !textInput.trim()}
+            disabled={isSendingText || voiceState === 'connecting' || !textInput.trim()}
             aria-label="Enviar mensaje"
             className="p-2 rounded-xl bg-[#C8102E] hover:bg-[#A60D25] text-white disabled:opacity-40 transition-colors cursor-pointer shrink-0"
           >

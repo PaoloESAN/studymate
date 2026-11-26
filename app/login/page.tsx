@@ -13,6 +13,7 @@ import {
   User,
 } from 'lucide-react';
 import { useToast } from '@/app/providers';
+import { getStoredUser } from '@/lib/authClient';
 
 const emptySubscribe = () => () => {};
 
@@ -34,16 +35,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    try {
-      const existing = localStorage.getItem('studymate_user');
-      if (existing) {
-        const parsed = JSON.parse(existing);
-        if (parsed?.email) {
-          router.replace('/dashboard');
-        }
-      }
-    } catch {
-      // Ignorar datos inválidos
+    if (getStoredUser()) {
+      router.replace('/dashboard');
     }
   }, [router]);
 
@@ -76,7 +69,7 @@ export default function LoginPage() {
       showToast(
         isRegister ? 'Cuenta creada correctamente' : 'Sesión iniciada'
       );
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } catch {
       setError('Error de conexión con el servidor.');
       setLoading(false);

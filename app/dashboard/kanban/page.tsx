@@ -6,6 +6,7 @@ import AuthGuard from '@/components/AuthGuard';
 import KanbanBoard, { KanbanTask } from '@/components/KanbanBoard';
 import ScoreModal from '@/components/ScoreModal';
 import { STUDYMATE_DATA_UPDATED_EVENT } from '@/lib/webmcp';
+import { getStoredUserId } from '@/lib/authClient';
 
 interface RawCourse {
   id: string;
@@ -33,8 +34,13 @@ export default function KanbanPage() {
   const [isScoreModalOpen, setIsScoreModalOpen] = useState(false);
 
   const fetchBoardData = useCallback(async () => {
+    const userId = getStoredUserId();
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
     try {
-      const res = await fetch('/api/courses?userId=default-user');
+      const res = await fetch(`/api/courses?userId=${encodeURIComponent(userId)}`);
       if (res.ok) {
         const data: RawCourse[] = await res.json();
         setCourses(
@@ -57,7 +63,9 @@ export default function KanbanPage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/courses?userId=default-user')
+    const userId = getStoredUserId();
+    if (!userId) return;
+    fetch(`/api/courses?userId=${encodeURIComponent(userId)}`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data: RawCourse[]) => {
         setCourses(

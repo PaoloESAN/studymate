@@ -10,7 +10,12 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { action, email, password, name } = body;
 
-    if (!email || !password) {
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      !email.trim() ||
+      !password
+    ) {
       return NextResponse.json(
         { error: 'El correo y la contraseña son obligatorios.' },
         { status: 400 }
@@ -34,11 +39,15 @@ export async function POST(request: Request) {
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
+      const cleanName =
+        typeof name === 'string' && name.trim().length > 0
+          ? name.trim()
+          : cleanEmail.split('@')[0];
       const newUser = await prisma.user.create({
         data: {
           email: cleanEmail,
           password: hashedPassword,
-          name: name ? name.trim() : cleanEmail.split('@')[0],
+          name: cleanName,
           role: 'STUDENT',
         },
         select: {
